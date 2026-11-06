@@ -33,7 +33,11 @@ fn decimal_text(mut coefficient: i128, mut exponent: i32) -> String {
 #[cfg(not(target_arch = "wasm32"))]
 fn write_decimal_bytes(fd: c_int, mut bytes: &[u8]) {
     while !bytes.is_empty() {
-        let written = unsafe { libc::write(fd, bytes.as_ptr().cast(), bytes.len()) };
+        #[cfg(windows)]
+        let count = bytes.len().min(u32::MAX as usize) as u32;
+        #[cfg(not(windows))]
+        let count = bytes.len();
+        let written = unsafe { libc::write(fd, bytes.as_ptr().cast(), count) };
         if written <= 0 {
             return;
         }

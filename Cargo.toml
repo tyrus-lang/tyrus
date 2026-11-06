@@ -160,7 +160,7 @@ inquire.workspace = true
 crossterm = "0.29"
 # `tyrus watch`. The same version and features the runtime's `FSWatcher` uses,
 # so the two share one build of the crate.
-notify = { version = "8", default-features = false, features = ["crossbeam-channel"] }
+notify = { version = "8", default-features = false, features = ["crossbeam-channel", "macos_fsevent"] }
 libc.workspace = true
 reedline = "0.50"
 nu-ansi-term = "0.50"
