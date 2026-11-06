@@ -304,13 +304,17 @@ const main = async (): Promise<void> => {{
 /// passing the gate says nothing about the second, so every hop is checked.
 #[test]
 fn a_redirect_into_a_refused_destination_is_stopped() {
-    let Some(port) = test_port() else {
-        return;
+    let listener = match std::net::TcpListener::bind(("127.0.0.1", 0)) {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!(
+                "SKIP: loopback HTTP testing requires permission to bind a local TCP listener ({error})."
+            );
+            return;
+        }
+        Err(error) => panic!("could not bind the redirect listener: {error}"),
     };
-    let Some(target) = test_port() else {
-        return;
-    };
-    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    let port = listener.local_addr().unwrap().port();
     let redirector = std::thread::spawn(move || {
         // Exactly one connection: the client asks this host once, and the
         // address it is redirected to is refused before anything connects
@@ -320,7 +324,7 @@ fn a_redirect_into_a_refused_destination_is_stopped() {
             let _ = stream.read(&mut buffer);
             let _ = stream.write_all(
                 format!(
-                    "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{target}/x\r\n\
+                    "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:9/x\r\n\
                      Content-Length: 0\r\nConnection: close\r\n\r\n"
                 )
                 .as_bytes(),

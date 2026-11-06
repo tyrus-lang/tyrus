@@ -234,6 +234,40 @@ fn emit_runtime_link_args(objects: &[std::path::PathBuf], out_dir: &std::path::P
     }
 }
 
+fn macos_runtime_native_link_args() -> Vec<String> {
+    let Some(manifest) = staticlib_roots()
+        .into_iter()
+        .map(|root| root.join("tyrus-native-libs.json"))
+        .find(|path| path.is_file())
+    else {
+        panic!(
+            "macOS JIT runtime objects require tyrus-native-libs.json; build the runtime native link manifest before the CLI"
+        );
+    };
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    let contents = std::fs::read_to_string(&manifest)
+        .unwrap_or_else(|error| panic!("could not read {}: {error}", manifest.display()));
+    let value: serde_json::Value = serde_json::from_str(&contents)
+        .unwrap_or_else(|error| panic!("invalid {}: {error}", manifest.display()));
+    let target = std::env::var("TARGET").expect("Cargo must provide the compilation target");
+    assert_eq!(
+        value["target"].as_str(),
+        Some(target.as_str()),
+        "native link manifest target does not match the Cargo target"
+    );
+    value["arguments"]
+        .as_array()
+        .expect("native link manifest must contain an arguments array")
+        .iter()
+        .map(|argument| {
+            argument
+                .as_str()
+                .expect("native link arguments must be strings")
+                .to_string()
+        })
+        .collect()
+}
+
 fn main() {
     let target = std::env::var("TARGET").expect("Cargo must provide the compilation target");
     println!("cargo:rustc-env=TYRUS_TARGET_TRIPLE={target}");
@@ -317,6 +351,12 @@ fn main() {
                 println!("cargo:rustc-link-arg-bins={}", o.display());
                 println!("cargo:rustc-link-arg-tests={}", o.display());
                 o_count += 1;
+            }
+            if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+                for argument in macos_runtime_native_link_args() {
+                    println!("cargo:rustc-link-arg-bins={argument}");
+                    println!("cargo:rustc-link-arg-tests={argument}");
+                }
             }
             println!("cargo:warning=linked {o_count} runtime objects for JIT symbol resolution");
         }

@@ -92,6 +92,11 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+      - name: Match the LLVM release static MSVC runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          'RUSTFLAGS=-C target-feature=+crt-static' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Validate release tag
         shell: bash
         run: |
@@ -161,6 +166,22 @@ jobs:
         env:
           CARGO_CFG_TARGET_ENV: msvc
         run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { throw 'VCPKG_INSTALLATION_ROOT is required to install LLVM release dependencies.' }
+          $vcpkg = Join-Path $vcpkgRoot 'vcpkg.exe'
+          & $vcpkg install 'zlib:x64-windows-static' 'zstd:x64-windows-static' 'libxml2[core]:x64-windows-static'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the LLVM release dependencies with vcpkg.' }
+          $dependencyLib = Join-Path $vcpkgRoot 'installed/x64-windows-static/lib'
+          $llvmLib = Join-Path $env:LLVM_SYS_231_PREFIX 'lib'
+          foreach ($dependency in @(
+            @{ Target = 'zs.lib'; Candidates = @('zlib.lib', 'zs.lib') },
+            @{ Target = 'zstd_static.lib'; Candidates = @('zstd.lib', 'zstd_static.lib') },
+            @{ Target = 'libxml2s.lib'; Candidates = @('libxml2.lib', 'libxml2s.lib') }
+          )) {
+            $source = $dependency.Candidates | ForEach-Object { Join-Path $dependencyLib $_ } | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $source) { throw "Missing $($dependency.Target) equivalent in $dependencyLib." }
+            Copy-Item $source (Join-Path $llvmLib $dependency.Target) -Force
+          }
           $probe = Join-Path $env:RUNNER_TEMP 'tyrus-llvm-link-check.exe'
           rustc --edition=2024 crates/tyrus-codegen/build.rs -o $probe
           if ($LASTEXITCODE -ne 0) { throw 'Could not compile the LLVM link dependency check.' }

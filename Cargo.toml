@@ -192,6 +192,7 @@ rexpect = "0.7"
 
 [build-dependencies]
 tyrus-runtime = { path = "crates/tyrus-runtime" }
+serde_json.workspace = true
 
 [profile.release]
 opt-level = 3
