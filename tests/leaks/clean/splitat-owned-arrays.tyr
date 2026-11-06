@@ -1,0 +1,47 @@
+// `array.splitAt(index)` returns `[T[], T[]]`: two fresh slices built with the
+// same owned-string-aware slice codegen `.slice()` already uses (see
+// `range-slicing-owned-strings.tyr`), assembled into a `Type::Tuple`. Widening
+// `array_method_allocates`'s ownership-registration filter from `Type::Array`
+// to also accept `Type::Tuple` reuses the existing `Deep` release plan, whose
+// `Type::Tuple` arm (from `map-entries-buffers`/`tuple-owned-return-clone`)
+// already walks and frees each element correctly, so nothing new needed
+// writing there.
+//
+// Covers: the loop case, an unbound temporary through every split shape
+// (middle, first-empty, last-empty) for both a `Copy` (`i32[]`) and an owned
+// (`string[]`) element type, a bound name, a rebind, and a chained call never
+// bound to a name (`words.splitAt(1)[1].splitAt(1)`), mirroring the slice-of-
+// a-slice idiom already proven clean. Binding a chained call's *result* to a
+// name instead (`const nested = words.splitAt(1)[1].splitAt(1);`) hits a
+// separate, pre-existing gap unrelated to `splitAt`, see
+// `chained-owning-method-call-bound-to-a-name` in `known/`.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const nums: i32[] = [1, 2, 3, 4, 5];
+        const words: string[] = ["alpha", "beta", "gamma"];
+
+        // Unbound temporaries: middle, first, last, whole, empty splits.
+        total += nums.splitAt(2)[0].length;
+        total += nums.splitAt(0)[1].length;
+        total += nums.splitAt(5)[0].length;
+        total += words.splitAt(1)[0].length;
+        total += words.splitAt(0)[1].length;
+        total += words.splitAt(3)[0].length;
+
+        // Bound to a name, then rebound.
+        let parts = nums.splitAt(2);
+        total += parts[0].length;
+        parts = nums.splitAt(3);
+        total += parts[1].length;
+
+        let wordParts = words.splitAt(1);
+        total += wordParts[0].length;
+        wordParts = words.splitAt(2);
+        total += wordParts[1].length;
+
+        // Chained, never bound, mirroring the existing slice-of-a-slice idiom.
+        total += words.splitAt(1)[1].splitAt(1)[0].length;
+    }
+    console.log(total);
+};

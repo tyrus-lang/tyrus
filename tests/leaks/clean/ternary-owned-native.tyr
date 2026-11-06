@@ -1,0 +1,20 @@
+import { cpuTemp, desktopDir, documentsDir } from "tyrus:os";
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const pick: boolean = i % 2 === 0;
+
+        const dir: string? = pick ? desktopDir() : documentsDir();
+        if (dir) {
+            total += dir.length as i32;
+        }
+
+        const temp: f32? = pick ? cpuTemp("fahrenheit") : cpuTemp("celsius");
+        if (temp) {
+            total += 1;
+        }
+    }
+    console.log(total >= 0);
+    console.log("assert:", true);
+};

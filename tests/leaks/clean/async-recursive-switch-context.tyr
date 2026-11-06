@@ -1,0 +1,54 @@
+async function label(value: i32): Promise<string> {
+    if (value === 1) {
+        return "one".toUpperCase();
+    }
+    return "other".toUpperCase();
+}
+
+async function exercise(values: i32[]): Promise<i32> {
+    let result: i32 = 0;
+    for (const value of values) {
+        try {
+            switch (value) {
+                case 1: {
+                    let temporary: string = await label(value);
+                    temporary = temporary.toLowerCase();
+                    temporary.toUpperCase();
+                    result += value;
+                    continue;
+                }
+                default: {
+                    let temporary: string = await label(value);
+                    temporary = temporary.toLowerCase();
+                    temporary.toUpperCase();
+                    await label(2);
+                    result += value;
+                }
+            }
+        } catch (error: Error) {
+            result = -1;
+        } finally {
+            result += 0;
+        }
+        switch (1) {
+            case 1: {
+                await label(1);
+                break;
+            }
+            default: {
+                await label(2);
+            }
+        }
+    }
+    return result;
+}
+
+const main = async (): Promise<void> => {
+    const values: i32[] = [1, 2];
+    let result: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        result = await exercise(values);
+    }
+    console.log(result);
+    console.log("assert:", 3);
+};

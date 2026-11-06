@@ -1,0 +1,34 @@
+// A `string[]` literal mixing static and freshly-allocated elements
+// (`["alpha", "beta".toUpperCase(), "gamma"]`) could previously only be
+// claimed all-or-nothing: every element owned (`Deep`) or none (`Buffer`).
+// A mix was left entirely unclaimed, both the buffer and the owned
+// element leaked, confirmed with valgrind even with zero method calls on
+// the array. Closed by `ReleasePlan::ArrayElements`, naming the buffer
+// offsets that are individually owned, the same idea `Fields` already gives
+// a mixed object applied to buffer offsets instead of struct fields.
+//
+// Expected output is 3000.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        // Owned element first, in the middle, and last.
+        const a: string[] = ["ALPHA".toLowerCase(), "beta", "gamma"];
+        const b: string[] = ["alpha", "BETA".toLowerCase(), "gamma"];
+        const c: string[] = ["alpha", "beta", "GAMMA".toLowerCase()];
+        total += a.length + b.length + c.length;
+
+        // Unbound temporary: never named, swept at end of scope.
+        ["ONE".toLowerCase(), "two", "three"];
+
+        // Rebind.
+        let rebound: string[] = ["x", "Y".toLowerCase(), "z"];
+        rebound = ["p", "Q".toLowerCase(), "r", "s"];
+        total += rebound.length;
+
+        // Nested: a mixed array as a field inside an object.
+        const wrapped: { items: string[] } = { items: ["nested", "ITEM".toLowerCase()] };
+        total += wrapped.items.length;
+    }
+    console.log(total);
+    console.log("assert:", 3000);
+};

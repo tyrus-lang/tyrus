@@ -1,0 +1,50 @@
+// `arr[a..b]` (and its open-ended forms) desugar to `.slice()`, which shares
+// codegen with `.concat()`, `.toReversed()`, `.with()` and `.values()`. All
+// five previously corrupted memory for a `string[]` receiver: the shared
+// runtime helper (`tyrus_array_slice`/`tyrus_array_concat`/`tyrus_array_with`)
+// did a raw byte copy of each element, which only duplicates the pointer,
+// never the string it points to. The destination array still unconditionally
+// frees its own elements at scope exit, so a heap-owned string got freed
+// twice, and a literal array's static (`.rodata`) string got freed at all
+// (`Invalid free()`, confirmed under valgrind pointing at a read-only mapped
+// segment). Fixed with owned-string runtime variants
+// (`tyrus_array_slice_owned_strings`, `tyrus_array_concat_owned_strings`,
+// `tyrus_array_with_owned_strings`) that `strdup` every element instead.
+//
+// A second, unrelated bug surfaced investigating this one: `.values()` was
+// missing from `array_method_allocates`, so its result, allocated the exact
+// same way as `.slice()`, was never registered for cleanup at all, leaking
+// its buffer (and, for a `string[]`, its element contents) even for the
+// already-correct byte-copy path. Fixed by adding it to the allow-list.
+//
+// Covers: the loop case (temporary, unbound), a bound name, a rebind, and
+// nesting a slice of a slice.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const letters: string[] = ["a", "b", "c", "d", "e"];
+
+        // Unbound temporaries, through every method that shares this codegen.
+        total += letters[1..4].length;
+        total += letters.slice(1, 4).length;
+        total += letters.toReversed().length;
+        total += letters.values().length;
+        total += letters.concat(["f", "g"]).length;
+        total += letters.with(0, "z").length;
+        total += letters[1..=3].length;
+        total += letters[2..].length;
+        total += letters[..3].length;
+        total += letters[..=3].length;
+        total += letters[..].length;
+
+        // Bound to a name, then rebound.
+        let middle: string[] = letters[1..4];
+        total += middle.length;
+        middle = letters[2..];
+        total += middle.length;
+
+        // Nested: a slice of a slice.
+        total += letters[1..4][0..1].length;
+    }
+    console.log(total);
+};

@@ -1,0 +1,56 @@
+// `readlink`, `canonicalize`, `tempFile`, and `tempDir().path` each return an
+// owned path string, and `symlink`/`hardLink` allocate
+// only internal, already-freed temporaries. Added as part of implementing
+// `tyrus-fs.md` to close a gap the review found: none of these had
+// leak-corpus coverage. Covers the loop case, an unbound temporary, a bound
+// name, and a rebind.
+import { symlink, hardLink, readlink, canonicalize, tempFile, tempDir, writeFileSync, rm, type RmOptions, type TempDir, type FsError } from "tyrus:fs";
+
+const main = (): void => {
+    const opts: RmOptions = { force: true, recursive: true };
+    try {
+        rm("./fs-links-temp-target.txt", opts);
+        rm("./fs-links-temp-link.txt", opts);
+        rm("./fs-links-temp-hardlink.txt", opts);
+        writeFileSync("./fs-links-temp-target.txt", "content");
+        symlink("./fs-links-temp-target.txt", "./fs-links-temp-link.txt");
+        hardLink("./fs-links-temp-target.txt", "./fs-links-temp-hardlink.txt");
+    } catch (e: FsError) {}
+
+    for (let i: i32 = 0; i < 200; i += 1) {
+        try {
+            match (readlink("./fs-links-temp-link.txt")) {
+                Ok(target) => {
+                    console.log(target.length > 0);
+                    console.log("assert:", true);
+                }
+                Err(_) => {}
+            }
+
+            // Unbound temporary: never named, swept by the same end-of-scope path.
+            readlink("./fs-links-temp-link.txt");
+
+            // Rebind: the previous `rebound` payload must be released before
+            // this overwrites it.
+            let rebound: string = canonicalize("./fs-links-temp-target.txt");
+            rebound = canonicalize("./fs-links-temp-hardlink.txt");
+            console.log(rebound.length > 0);
+            console.log("assert:", true);
+
+            const temp: string = tempFile();
+            console.log(temp.length > 0);
+            console.log("assert:", true);
+            rm(temp, opts);
+
+            const dir = tempDir();
+            console.log(dir.path.length > 0);
+            console.log("assert:", true);
+        } catch (e: FsError) {}
+    }
+
+    try {
+        rm("./fs-links-temp-target.txt", opts);
+        rm("./fs-links-temp-link.txt", opts);
+        rm("./fs-links-temp-hardlink.txt", opts);
+    } catch (e: FsError) {}
+};

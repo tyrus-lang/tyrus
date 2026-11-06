@@ -1,0 +1,56 @@
+// `tyrus:compress` over buffers: owned string and byte temporaries, locals,
+// literals, option objects, every format, `?`, `onfail` inside a loop, and the
+// `Err` of each failure. The runtime copies the input before the call returns,
+// so each temporary is released right after it, and each `Result` is released
+// once, by whichever variant it holds.
+import { CompressError, CompressFormat, CompressOptions, DecompressOptions, compress, decompress } from "tyrus:compress";
+import { utf8 } from "tyrus:encoding";
+
+const label = (round: i32): string => `round ${round} of the compress corpus`;
+
+const bytesOf = (round: i32): u8[] => {
+    let bytes: u8[] = [116, 121, 114, 117, 115];
+    bytes.push(round as u8);
+    return bytes;
+};
+
+const roundTrip = async (data: u8[] | string, format: CompressFormat): Promise<Result<usize, CompressError>> => {
+    const packed = await compress(data, format, { level: 6 })?;
+    const options: DecompressOptions = { format: format, maxRatio: 1_000 };
+    const restored = await decompress(packed, options)?;
+    return Ok(restored.length);
+};
+
+const main = async (): Promise<void> => {
+    const formats: CompressFormat[] = [CompressFormat.Gzip, CompressFormat.Deflate, CompressFormat.DeflateRaw, CompressFormat.Brotli];
+    for (let round = 0; round < 4; round += 1) {
+        for (const format of formats) {
+            match (await roundTrip("constant text", format)) {
+                Ok(size) => { print(size); }
+                Err(error) => { print(error.code); }
+            }
+        }
+        const text = await compress(label(round), CompressFormat.Brotli) onfail {
+            print(text.code);
+            continue;
+        };
+        const bytes = await compress(bytesOf(round), CompressFormat.Gzip) onfail {
+            print(bytes.code);
+            continue;
+        };
+        const back = await decompress(bytes) onfail {
+            print(back.code);
+            continue;
+        };
+        print(text.length > 0, utf8.decodeLossy(back));
+        match (await decompress([1, 2, 3])) {
+            Ok(value) => { print(value.length); }
+            Err(error) => { print(error.code, error.message); }
+        }
+        const small: DecompressOptions = { maxOutputBytes: 4 };
+        match (await decompress(bytes, small)) {
+            Ok(value) => { print(value.length); }
+            Err(error) => { print(error.code); }
+        }
+    }
+};

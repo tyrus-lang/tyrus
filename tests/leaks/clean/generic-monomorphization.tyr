@@ -1,0 +1,129 @@
+// Monomorphised generic functions leaked almost every owned shape they
+// touched.
+//
+// `identity<T>`, `wrap<T>`, `chooseFirst<T>`, and `firstItem<T>` (the exact
+// four in the full examples corpus) each get their own
+// per-instantiation codegen (`identity.__tyrus_generic.string`,
+// `wrap.__tyrus_generic.Tag`, ...), a separate system from both the
+// synchronous return-ownership machinery and the async drop-glue this
+// file's other cases rely on, but it reuses the *same* underlying
+// predicates those two systems already had, which is what made this
+// closable without a new subsystem of its own. Two independent gaps in
+// those predicates, both keyed on `fn_signatures` (populated only for
+// concrete, non-generic functions), left every shape here invisible to
+// ownership tracking entirely:
+//
+// 1. `owned_user_function_call`, the predicate every "is this expression
+//    provably an owned allocation" check is built on (a return statement's
+//    own source-cleanup, an array literal's element-ownership check, ...),
+//    looked up the callee in `fn_signatures` to find its return type. A
+//    generic call's callee is still the bare generic name (`identity`),
+//    never a key there (only the mangled per-instantiation symbol
+//    `specialize_generic_function` registers is), so this predicate always
+//    answered `false` for a generic call. Closed by falling back to a new,
+//    read-only `generic_call_return_type`: the same substitution
+//    `specialize_generic_function` performs, without creating or caching a
+//    specialization, just enough to answer the type question.
+// 2. The general call-site registration (claims a call's own result once
+//    the call returns) resolves the result type through `expr_type_hint`,
+//    which (confirmed empirically) never resolves a generic call's
+//    concrete, substituted return type either; it answers `None` for that
+//    AST shape. The same `generic_call_return_type` fallback closed this
+//    half too, so a generic call's own result is now claimed by its caller
+//    exactly like any other function's.
+//
+// One narrower gap remained after both: `wrap<string>`'s wrapping array
+// literal (`[value]`, wrapping a bare parameter reference) built its own
+// buffer fresh, but neither `static_string_array_frame_literal` (all
+// elements a static `StrLit`) nor the provably-owned-elements check
+// (`owned_string_array_literal_expression`, closed for `nested-owned-
+// array-literal`) recognized a literal wrapping a plain `Ident` whose own
+// provenance cannot be proven here. Closed by adding an unconditional
+// buffer-only fallback for any other array literal: the buffer is always a
+// fresh allocation of the literal's own construction regardless of what its
+// elements turn out to be, so freeing it alone is always safe, it never
+// touches whatever separate tracking (if any) applies to an element itself.
+//
+// The one shape that never leaked in this battery:
+// `identity<Map<string, i32>>`, a handle-shaped type passed by pointer
+// rather than cloned by this system, so there was nothing for the missing
+// registration to lose in the first place.
+//
+// Confirmed with valgrind reporting zero heap blocks in use at exit across
+// all six shapes, not just zero bytes "definitely lost".
+interface Tag {
+    names: string[];
+}
+
+const identity = <T>(value: T): T => {
+    return value;
+};
+
+const wrap = <T>(value: T): T[] => {
+    return [value];
+};
+
+const chooseFirst = <T>(first: T, second: T): T => {
+    return first;
+};
+
+const firstItem = <T>(values: T[]): T => {
+    return values[0];
+};
+
+const makeTag = (): Tag => {
+    return { names: ["x".toUpperCase(), "y".toUpperCase()] };
+};
+
+const main = (): void => {
+    let a: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const s: string = identity("a".toUpperCase());
+        a += s.length;
+    }
+    console.log(a);
+    console.log("assert:", 200);
+
+    let b: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const m = Map<string, i32>();
+        m.set("k", 1);
+        const m2: Map<string, i32> = identity<Map<string, i32>>(m);
+        b += m2.size;
+    }
+    console.log(b);
+    console.log("assert:", 200);
+
+    let c: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const arr: string[] = wrap("b".toUpperCase());
+        c += arr.length;
+    }
+    console.log(c);
+    console.log("assert:", 200);
+
+    let d: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const arr: Tag[] = wrap<Tag>(makeTag());
+        d += arr[0].names.length;
+    }
+    console.log(d);
+    console.log("assert:", 400);
+
+    let e: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const s: string = chooseFirst("c".toUpperCase(), "d".toUpperCase());
+        e += s.length;
+    }
+    console.log(e);
+    console.log("assert:", 200);
+
+    let f: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const arr: Tag[] = [makeTag(), makeTag()];
+        const t: Tag = firstItem<Tag>(arr);
+        f += t.names.length;
+    }
+    console.log(f);
+    console.log("assert:", 400);
+};

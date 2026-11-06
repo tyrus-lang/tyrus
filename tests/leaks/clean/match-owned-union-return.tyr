@@ -1,0 +1,22 @@
+type Result = { tag: "success"; data: string } | { tag: "error"; code: i32; message: string };
+
+function createResult(index: i32): Result {
+    if (index % 2 === 0) {
+        return { tag: "error", code: 404, message: "Not Found".toUpperCase() };
+    }
+    return { tag: "success", data: "ready".toUpperCase() };
+}
+
+function main(): void {
+    let observed: usize = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const result: Result = createResult(index);
+        match (result) {
+            { tag: "success", data } => { observed += data.length; }
+            ({ tag: "error", code, message }) if (code === 404) => { observed += message.length; }
+            { tag: "error", message } => { observed += message.length; }
+        }
+    }
+    console.log(observed);
+    console.log("assert:", 1400);
+}

@@ -1,0 +1,9 @@
+// REPL scenario: function (const) definition + call, looped 200x.
+const main = (): void => {
+    const add = (a: i32, b: i32): i32 => a + b;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const r: i32 = add(i, i * 2);
+        console.log(r);
+        console.log("assert:", i * 3);
+    }
+};

@@ -1,0 +1,15 @@
+// An array literal takes ownership of the values it stores, and claims the
+// whole array when every element was an owned allocation, which is what lets
+// the strings be released with the buffer. Used to leak 8 bytes per iteration.
+//
+// A literal mixing allocated and static strings is deliberately not claimed:
+// releasing it deeply would free static data. See
+// `known/array-of-static-strings.tyr`.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const names: string[] = ["a".toUpperCase()];
+        total += names.length;
+    }
+    console.log(total);
+};

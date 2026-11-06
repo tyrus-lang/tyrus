@@ -1,0 +1,64 @@
+// `glob` and `search` each return a `Result` containing an owned `string[]` (`diff`
+// returns four of them, in `DiffResult`) built by `collect_glob`/
+// `collect_search`/`collect_string_array` in `fs.rs`: a `TyrusStringArray`
+// buffer plus one `alloc_string`d pointer per match. Added as part of
+// implementing `tyrus-fs.md` to close a gap the review found: neither
+// function had any leak-corpus coverage. Also exercises the `**`
+// cross-directory glob added in the same pass (`walk_glob_segments`) and
+// `search`'s `maxResults` truncation. Covers the loop case, an unbound
+// temporary, a bound name, and a rebind.
+import { glob, search, diff, mkdir, writeFileSync, rm, type RmOptions, type SearchOptions, type DiffResult, type FsError } from "tyrus:fs";
+
+const main = (): void => {
+    const dir = "./__glob_search_diff_leak_tmp__";
+    const opts: RmOptions = { force: true, recursive: true };
+    try {
+        rm(dir, opts);
+        mkdir(dir);
+        mkdir(`${dir}/sub`);
+        writeFileSync(`${dir}/a.txt`, "same");
+        writeFileSync(`${dir}/b.txt`, "same");
+        writeFileSync(`${dir}/sub/c.txt`, "different-1");
+        writeFileSync(`${dir}/only-in-one.txt`, "x");
+    } catch (e: FsError) {}
+
+    for (let i: i32 = 0; i < 150; i += 1) {
+        match (glob(`${dir}/**/*.txt`)) {
+            Ok(nested) => {
+                console.log(nested.length);
+                console.log("assert:", 4);
+            }
+            Err(error) => { console.error(error.code); }
+        }
+
+        // Unbound temporary: never named, swept by the same end-of-scope path.
+        glob(`${dir}/*.txt`);
+
+        try {
+            const searchOpts: SearchOptions = { recursive: true, maxResults: 2 };
+            const capped = search("*.txt", searchOpts);
+            console.log(capped.length);
+            console.log("assert:", 2);
+
+            // Rebind: the previous `rebound` array must be released before
+            // this overwrites it.
+            let rebound = glob(`${dir}/*.txt`);
+            rebound = glob(`${dir}/sub/*.txt`);
+            match (rebound) {
+                Ok(matches) => {
+                    console.log(matches.length);
+                    console.log("assert:", 1);
+                }
+                Err(error) => { console.error(error.code); }
+            }
+
+            const changes: DiffResult = diff(dir, dir);
+            console.log(changes.unchanged.length);
+            console.log("assert:", 4);
+        } catch (e: FsError) {}
+    }
+
+    try {
+        rm(dir, opts);
+    } catch (e: FsError) {}
+};

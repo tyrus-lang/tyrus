@@ -1,0 +1,54 @@
+// Archive streams: `packStream` returns an owned `ReadableStream` handle whose
+// chunks are written by a blocking task, and `unpackStream` borrows a stream,
+// including an owned temporary passed straight in. Failing streams (a missing
+// source, a ZIP given to `unpackStream`) release their handles too.
+import { ArchiveError, ArchiveFormat, ArchiveSummary, PackOptions, UnpackOptions, packStream, unpackStream } from "tyrus:archive";
+import { FsError, mkdir, removeAll, writeFileSync } from "tyrus:fs";
+import { ReadableStream, StreamError } from "tyrus:stream";
+
+const root: string = "./target/leak-archive-streams";
+
+const prepare = (): void => {
+    try {
+        removeAll(root);
+    } catch (error: FsError) {}
+    try {
+        mkdir(root);
+        mkdir(`${root}/site`);
+        writeFileSync(`${root}/site/index.html`, "<h1>tyrus</h1>");
+    } catch (error: FsError) {
+        printError(error.code);
+    }
+};
+
+const roundTrip = async (round: i32, format: ArchiveFormat): Promise<void> => {
+    const archive: ReadableStream<u8[]> = packStream(`${root}/site`, format, { reproducible: true });
+    match (await unpackStream(archive, `${root}/out-${round}-${format as i32}`)) {
+        Ok(summary) => { print(summary.entries); }
+        Err(error) => { print(error.code); }
+    }
+};
+
+const missing = async (): Promise<void> => {
+    const absent: ReadableStream<u8[]> = packStream(`${root}/absent`, ArchiveFormat.Tar);
+    try {
+        const first: u8[]? = await absent.read();
+        print((first ?? []).length);
+    } catch (error: ArchiveError | StreamError) {
+        print(error.code);
+    }
+};
+
+const main = async (): Promise<void> => {
+    prepare();
+    for (let round = 0; round < 3; round += 1) {
+        await roundTrip(round, ArchiveFormat.Tar);
+        await roundTrip(round, ArchiveFormat.TarGz);
+        await roundTrip(round, ArchiveFormat.Zip);
+        await missing();
+    }
+    match (await unpackStream(packStream(`${root}/site`, ArchiveFormat.TarGz), `${root}/temporary`)) {
+        Ok(summary) => { print(summary.bytes); }
+        Err(error) => { print(error.code); }
+    }
+};

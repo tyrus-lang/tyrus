@@ -1,0 +1,19 @@
+// FenwickTree add/sum/len/isEmpty in a 200-iteration loop.
+import { FenwickTree } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const bit = FenwickTree(16);
+        bit.add(0, 1);
+        bit.add(5, 2);
+        bit.add(15, 3);
+        total += bit.sum(16);
+        total += bit.len() as i32;
+        if (bit.isEmpty()) {
+            total += 1;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 4400);
+};

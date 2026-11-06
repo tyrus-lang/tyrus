@@ -1,0 +1,31 @@
+// `systemFonts()` returns `FontInfo[]`, an array of struct elements owning
+// three strings each (`name`/`style`/`path`), the same out-param `TyrusArray`
+// shape as `cpus()`'s `CpuInfo[]`. Only 50 iterations here, not the usual
+// 200: `fontdb` re-enumerates every system font face on each call (hundreds
+// on a typical desktop), so the per-iteration cost is real work, not just
+// allocation, 50 already exercises the leak path the same way more
+// iterations would, at a fraction of the valgrind runtime.
+import { FontInfo, systemFonts } from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 50; i += 1) {
+        // Unbound temporary.
+        total += systemFonts().length;
+
+        // Bound to a name, reading owned string fields on one element.
+        const fonts: FontInfo[] = systemFonts();
+        if (fonts.length > 0) {
+            total += fonts[0].name.length;
+            total += fonts[0].style.length;
+            total += fonts[0].path.length;
+        }
+
+        // Rebind.
+        let rebound: FontInfo[] = systemFonts();
+        rebound = systemFonts();
+        total += rebound.length;
+    }
+    console.log(total > 0);
+    console.log("assert:", true);
+};

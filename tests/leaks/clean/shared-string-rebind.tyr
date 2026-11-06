@@ -1,0 +1,25 @@
+// A mutable binding reassigned while an array still holds what it used to
+// point at. The old value must not go when the binding moves on: the array's
+// element is a reference of its own, not a borrow of the binding.
+//
+// This is the case that caught the real defect. The rebind path loaded the
+// binding's pointer and freed it directly, with a separate boolean tracking
+// ownership, correct while a string was a pointer and a length, and an
+// invalid free the moment the allocation began before the text.
+//
+// Expected output is 6800.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let current: string = "first-value".toUpperCase();
+        let kept: string[] = [];
+        kept.push(current);
+        current = "second-value".toUpperCase();
+        kept.push(current);
+        current = "third-value".toUpperCase();
+        total += kept[0].length;
+        total += kept[1].length;
+        total += current.length;
+    }
+    console.log(total);
+};

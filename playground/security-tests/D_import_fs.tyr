@@ -1,0 +1,7 @@
+// Snippet D: Import tyrus:fs, must fail with --sandbox
+import { readFileSync } from "tyrus:fs";
+
+const main = (): void => {
+    let content = readFileSync("/etc/passwd")?;
+    print(content);
+}

@@ -1,0 +1,56 @@
+// `(x ?? "fallback").length` used directly as an `if` condition leaked the
+// fallback string, 2 B per iteration (`"z"` plus its null terminator).
+// Pre-existing and unrelated to any array work: reproduced with a plain
+// `string?`-returning function, no array anywhere in the program.
+//
+// Root cause, confirmed by dumping the generated LLVM IR (`TYRUS_DUMP_IR_ALWAYS`,
+// added temporarily to `Codegen::codegen`): `pending_owned_native_results` is a
+// single flat, compile-time list, and `discard_owned_native_result()`, called
+// at the end of most statements, flushes *all* of it, wherever that call
+// happens to land in the generated IR. The `??`'s coalesced string was left
+// pending after `emit_condition_value` computed the `if`'s condition, and the
+// first statement whose own codegen called discard was `console.log("unreachable")`,
+// inside the `then` block. That inserted the `free` only in `then`, a block
+// this test's condition never actually branches into (`"z".length` is never
+// `> 99`); `else` branched straight to `merge` with no release at all. The
+// value was correctly *tracked*, just freed in a block only one of two mutually
+// exclusive runtime paths ever reaches, a leak on every run that takes the
+// other one, which was every run here.
+//
+// Fixed by calling `discard_owned_native_result()` in `emit_if_stmt` right
+// after computing the condition and *before* creating the `then`/`else`
+// blocks, so any temporary the condition alone produced is released in the
+// block both branches originate from, same fix applied to `emit_while`,
+// `emit_do_while` and `emit_for`'s condition, which shared the identical
+// hazard and only happened not to leak in ad hoc testing because a loop's own
+// increment statement (itself unconditional) accidentally ended up being the
+// statement that discarded it. Deliberately *not* applied to
+// `emit_condition_value` itself, since `&&`/`||`/ternary/match-guard callers
+// use it as a sub-expression that can have a genuinely in-flight pending
+// temporary from an outer expression, flushing there could free something
+// still needed, trading this leak for a use-after-free.
+//
+// `total += (x ?? "z").length`, the same expression read directly instead of
+// through an `if`, never leaked, which is what narrowed this to `if`
+// specifically rather than `??` in general.
+//
+// Expected output is 200.
+const getIt = (i: i32): string? => {
+    if (i > 100000) {
+        return "even";
+    }
+    return;
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const x: string? = getIt(i);
+        if ((x ?? "z").length > 99) {
+            console.log("unreachable");
+        }
+        total += 1;
+    }
+    console.log(total);
+    console.log("assert:", 200);
+};

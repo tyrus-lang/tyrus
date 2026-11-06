@@ -1,0 +1,31 @@
+// A borrow held in an async frame must not be released by the frame.
+//
+// The frame's local classifier looks straight through the `&`, so a `&string`
+// would otherwise be judged by the ownership question asked of a `string`,
+// and a borrow of an owned value would be classified as owning it, making the
+// frame free a buffer that belongs to the value it borrows. The borrow now
+// takes a storage class of its own: the bytes go in the frame, nothing is
+// released.
+//
+// Before this, codegen refused the shape outright rather than getting it
+// wrong ("async frame storage for non-Copy local ... is not implemented yet").
+//
+// The owned string is allocated once, outside the loop, on purpose: an owned
+// string allocated *inside* a loop in an async function leaks one buffer per
+// iteration, which is a separate, pre-existing defect of frame teardown and
+// would drown this case's signal.
+import { sleepAsync } from "tyrus:task";
+
+async function main(): Promise<void> {
+    await sleepAsync(0);
+    const owner: string = "borrowed text".toUpperCase();
+    let total: usize = 0;
+    let round: i32 = 0;
+    while (round < 200) {
+        const borrowed: &string = &owner;
+        total += borrowed.length;
+        round += 1;
+    }
+    console.log(total);
+    console.log(owner);
+}

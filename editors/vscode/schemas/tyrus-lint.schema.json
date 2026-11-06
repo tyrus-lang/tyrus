@@ -1,0 +1,225 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "tyrus-lint Configuration",
+  "description": "Configuration schema for the tyrus linter.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "api-no-verb-in-path": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when an HTTP route path uses action verbs instead of resource-oriented paths."
+    },
+    "api-prefer-resource-nouns": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when HTTP route paths do not look like resource nouns."
+    },
+    "controller-must-send-response": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Requires HTTP controllers to complete every success path with `reply.status(...).send(...)`."
+    },
+    "controller-no-db-access": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids direct database access from HTTP controllers."
+    },
+    "controller-no-try-catch": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when HTTP controllers catch expected errors instead of letting services map them."
+    },
+    "db-explicit-select-columns": {
+      "$ref": "#/$defs/severity",
+      "default": "info",
+      "description": "Encourages explicit SELECT projections and can expand them from the local result interface."
+    },
+    "db-no-extra-select-columns": {
+      "$ref": "#/$defs/severity",
+      "default": "info",
+      "description": "Warns when a SQL SELECT projects columns that the result interface does not use."
+    },
+    "exhaustive-match": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Requires match over a closed type (enum, union, literal union, boolean) to cover every case. Enforced by the compiler (E0004)."
+    },
+    "export-protect-no-effect": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when `export protect` sits in the source root, where its folder scope already covers the whole project and narrows nothing."
+    },
+    "http-no-raw-status-code": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when HTTP responses use raw numeric status codes instead of `HttpStatus` members."
+    },
+    "no-duplicate-case": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Detects duplicate cases in switch or match."
+    },
+    "no-duplicate-imports": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects multiple import statements from the same module."
+    },
+    "no-empty-block": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects empty blocks without an explanatory comment."
+    },
+    "no-empty-catch": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects an empty catch block without an explanatory comment."
+    },
+    "no-floating-enum": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids f64/f128 values in an enum. Enforced by the compiler (E0701)."
+    },
+    "no-force-unwrap": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids forced unwrap (expr!) on optional values. Enforced by the compiler (E0716)."
+    },
+    "no-heterogeneous-enum": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids mixing value types within a primitive enum. Enforced by the compiler (E0702)."
+    },
+    "no-implicit-enum-primitive-cast": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids implicit conversion of an enum to its underlying primitive. Enforced by the compiler (E0308)."
+    },
+    "no-implicit-heavy-move": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when a large or non-Copy value is moved in a potentially surprising way."
+    },
+    "no-layer-skip": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when API code skips the route-controller-service-repository layering."
+    },
+    "no-null-literal": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids the `null` keyword. Nullable values use `T?`; absence is produced by optional fields, optional parameters, and external boundaries."
+    },
+    "no-shadow": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects a binding that shadows another binding from an enclosing scope."
+    },
+    "no-string-concat-in-loop": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects repeated string concatenation inside a loop."
+    },
+    "no-uninitialized-variable": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Surfaces deferred `let x: T;` bindings that are used before assignment or never assigned (compiler diagnostics E0381/E0382)."
+    },
+    "no-unnecessary-await": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Reserved until async returns can adopt a Promise without changing the declared payload type. Currently disabled."
+    },
+    "no-unnecessary-allocation": {
+      "$ref": "#/$defs/severity",
+      "default": "info",
+      "description": "Detects clearly unnecessary allocations."
+    },
+    "no-unnecessary-clone": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects a clone where the value could be borrowed instead."
+    },
+    "no-upward-imports": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids imports from lower API layers back into higher layers."
+    },
+    "no-unreachable-code": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Detects code that can never execute because it follows return, break, continue, or throw."
+    },
+    "no-unsafe-finally": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Detects return, throw, break, or continue inside a finally block, which can override the try/catch result."
+    },
+    "no-useless-null-check": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects a null check on a value that can never be null."
+    },
+    "no-unused-functions": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects non-exported functions that are never called."
+    },
+    "no-unused-imports": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects imported names that are never used."
+    },
+    "no-unused-vars": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects declared variables that are never used."
+    },
+    "prefer-borrow": {
+      "$ref": "#/$defs/severity",
+      "default": "info",
+      "description": "Suggests passing a reference when a function does not need ownership."
+    },
+    "prefer-const": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Suggests const when a let binding is never reassigned."
+    },
+    "prefer-nullish-coalescing": {
+      "$ref": "#/$defs/severity",
+      "default": "info",
+      "description": "Suggests ?? instead of a ternary that falls back on null."
+    },
+    "repository-no-http-error": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when repositories throw HTTP-layer errors instead of database/domain errors."
+    },
+    "repository-only-db-access": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Restricts direct database access to repository modules."
+    },
+    "route-no-business-logic": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Warns when route modules contain business logic instead of declarations."
+    },
+    "service-no-reply": {
+      "$ref": "#/$defs/severity",
+      "default": "error",
+      "description": "Forbids services from depending on `HttpReply` or sending HTTP responses directly."
+    },
+    "use-caught-error": {
+      "$ref": "#/$defs/severity",
+      "default": "warn",
+      "description": "Detects a caught error that is never used."
+    }
+  },
+  "$defs": {
+    "severity": {
+      "type": "string",
+      "enum": ["off", "info", "warn", "error"]
+    }
+  }
+}

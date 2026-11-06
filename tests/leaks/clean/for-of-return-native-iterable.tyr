@@ -1,0 +1,66 @@
+// A `return` out of a `for...of` over an owned native iterable never released
+// the iterable's array.
+//
+// The array is a temporary with no name, so it is not in `owned_native_vars`
+// (keyed by binding name, and what `break` and scope exit walk). `emit_for_of`
+// instead forgot the pending registration and emitted the release manually
+// after the loop, in the loop's exit block. `break` reaches that block;
+// `return` jumps straight to the function's return path and skips it.
+//
+// The boundary was exactly that intersection, each half confirmed separately: a
+// `for...of` over a plain array literal exited by `return` did not leak, and a
+// `for...of` over this same native call exited by `break` did not leak. Only
+// native-owned iterable plus `return` did.
+//
+// Forgetting the registration was not gratuitous: leaving the array in
+// `pending_owned_native_results` makes the loop body's own per-statement sweep
+// free it on the first iteration, while the loop is still reading from it. So
+// the array now goes to a third place, `for_of_iterable_cleanups`, which that
+// sweep does not touch and every nested `return` drains on its way out. The
+// entries survive being emitted, because each `return` and the exit block are
+// separate blocks, none of which reaches another, the same value released in
+// all of them is one release at run time.
+//
+// The second half this was waiting on, cloning the returned element, which
+// lives *inside* the array about to be released, turned out to be already
+// there: the owned-return path clones into `owned.return` before running any
+// cleanup, for the unrelated `ValidationError` case. Returning `node` out of
+// the array and then freeing the array is therefore a clone and a release, not
+// a use-after-free; AddressSanitizer says so, and the program still prints the
+// right answer.
+import { Graph } from "tyrus:algorithm";
+
+const firstNode = (g: Graph<string, i32>): string => {
+    for (const node of g.nodes()) {
+        return node;
+    }
+    return "";
+};
+
+// The same shape with a closure between the loop and the `return`. Emitting a
+// closure body while the enclosing loop is still on the cleanup stack once made
+// the release land in the wrong LLVM function ("Instruction does not dominate
+// all uses"); this keeps that from coming back as a leak instead.
+const firstNodeVia = (g: Graph<string, i32>): string => {
+    for (const node of g.nodes()) {
+        const pick = (): string => {
+            return node;
+        };
+        return pick();
+    }
+    return "";
+};
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const g = Graph<string, i32>();
+        g.addNode("a");
+        g.addNode("b");
+        g.addNode("c");
+        total += firstNode(g).length as i32;
+        total += firstNodeVia(g).length as i32;
+    }
+    console.log(total);
+    console.log("assert:", 400);
+};

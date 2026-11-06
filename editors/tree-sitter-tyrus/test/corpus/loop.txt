@@ -1,0 +1,83 @@
+==================
+Loop statements and expressions
+==================
+
+function main(): void {
+    let i: i32 = 0;
+    loop {
+        i += 1;
+        if (i < 5) { continue; }
+        break;
+    }
+    const a = loop { break 10; };
+    const t = loop { break "x"; };
+    const nested = loop {
+        if (true) { break 1; }
+        break 0;
+    };
+    console.log(a, t, nested);
+}
+
+---
+
+(source_file
+  (declaration
+    (function_declaration
+      (identifier)
+      (parameters)
+      (primitive_type)
+      (block
+        (declaration
+          (variable_declaration
+            (identifier)
+            (primitive_type)
+            (number)))
+        (expression_statement
+          (loop_expression
+            (block
+              (expression_statement
+                (assignment_expression
+                  (identifier)
+                  (number)))
+              (if_statement
+                (binary_expression
+                  (identifier)
+                  (number))
+                (block
+                  (continue_statement)))
+              (break_statement))))
+        (declaration
+          (variable_declaration
+            (identifier)
+            (loop_expression
+              (block
+                (break_statement
+                  (number))))))
+        (declaration
+          (variable_declaration
+            (identifier)
+            (loop_expression
+              (block
+                (break_statement
+                  (string))))))
+        (declaration
+          (variable_declaration
+            (identifier)
+            (loop_expression
+              (block
+                (if_statement
+                  (true)
+                  (block
+                    (break_statement
+                      (number))))
+                (break_statement
+                  (number))))))
+        (expression_statement
+          (call_expression
+            (member_expression
+              (identifier)
+              (identifier))
+            (arguments
+              (identifier)
+              (identifier)
+              (identifier))))))))

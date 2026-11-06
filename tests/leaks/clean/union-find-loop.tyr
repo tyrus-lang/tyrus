@@ -1,0 +1,17 @@
+// UnionFind find/union/connected/setCount in a 200-iteration loop.
+import { UnionFind } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const uf = UnionFind<u32>(64);
+        uf.union(0, 1);
+        uf.union(2, 3);
+        uf.union(0, 2);
+        total += uf.setCount() as usize;
+        uf.connected(0, 3);
+        uf.find(63);
+    }
+    console.log(total);
+    console.log("assert:", 12200);
+};

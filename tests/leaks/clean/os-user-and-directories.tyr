@@ -1,0 +1,66 @@
+// Every `tyrus:os` Phase 3 function that returns `string` (`userName`,
+// `homeDir`, `cacheDir`, `configDir`, `dataDir`, `tempDir`, `appDataDir`)
+// allocates through `crate::strings::alloc_string` and is registered via
+// `record_owned_native_result(result, Type::Str)`, the same mechanism
+// already covered by `os-native-string-methods.tyr`. `userInfo()` returns a
+// struct of three owned strings (`UserInfo`), released via
+// `ReleasePlan::Deep` walking each `Str` field, a case not covered by any
+// existing leak test, since `MemoryInfo`/`CpuUsage` (Phase 2) only have
+// scalar `u64` fields. `desktopDir`/`documentsDir` return `string?`, boxed
+// the way the compiler represents a present optional (a malloc'd slot
+// holding the string pointer, freed via the `Optional` box path), also new,
+// and the exact case that originally crashed (segfault) before
+// `box_optional_pointer` in `crates/tyrus-runtime/src/os.rs` fixed it.
+import {
+    UserInfo,
+    userInfo,
+    userName,
+    whoami,
+    homeDir,
+    cacheDir,
+    configDir,
+    dataDir,
+    tempDir,
+    desktopDir,
+    documentsDir,
+    appDataDir,
+} from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        console.log(userName().length);
+
+        const info: UserInfo = userInfo();
+        total += info.username.length;
+        total += info.homedir.length;
+        total += info.shell.length;
+
+        let dir: string = homeDir();
+        total += dir.length;
+        dir = cacheDir();
+        total += dir.length;
+        dir = configDir();
+        total += dir.length;
+        dir = dataDir();
+        total += dir.length;
+        dir = tempDir();
+        total += dir.length;
+        dir = appDataDir("tyrus-leak-check");
+        total += dir.length;
+
+        const desktop: string? = desktopDir();
+        if (desktop) {
+            total += desktop.length;
+        }
+        const documents: string? = documentsDir();
+        if (documents) {
+            total += documents.length;
+        }
+        const realName: string? = whoami();
+        if (realName) {
+            total += realName.length;
+        }
+    }
+    console.log(total);
+};

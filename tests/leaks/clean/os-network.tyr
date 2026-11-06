@@ -1,0 +1,21 @@
+import { NetworkInterface, OsError, networkInterfaces } from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const result: Result<NetworkInterface[], OsError> = networkInterfaces();
+        match (result) {
+            Ok(interfaces) => {
+                for (let j: usize = 0; j < interfaces.length; j += 1) {
+                    total += interfaces[j].name.length;
+                    total += interfaces[j].address.length;
+                    total += interfaces[j].netmask.length;
+                    total += interfaces[j].family.length;
+                }
+            }
+            Err(error) => { total += error.code.length; }
+        }
+    }
+    console.log(total > 0);
+    console.log("assert:", true);
+};

@@ -1,0 +1,39 @@
+// SortedMap set/get/has/delete/min/max/len/isEmpty in a 200-iteration loop,
+// with a rebind and an unbound temporary each iteration.
+import { SortedMap } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let m = SortedMap<i32, string>();
+        m.set(i, "a");
+        m.set(i + 1, "b");
+        m.set(i + 2, "c");
+        if (m.has(i + 1)) {
+            total += 1;
+        }
+        if (m.has(i + 100)) {
+            total += 1;
+        }
+        total += m.len();
+        if (m.isEmpty()) {
+            total += 1;
+        }
+        if ((m.get(i + 2) ?? "") === "c") {
+            total += 1;
+        }
+        if ((m.min() ?? 0) >= 0) {
+            total += 1;
+        }
+        if ((m.max() ?? 0) > i + 1) {
+            total += 1;
+        }
+        m.delete(i + 1);
+        if (m.has(i + 1)) {
+            total += 1;
+        }
+        m = SortedMap<i32, string>();
+    }
+    console.log(total);
+    console.log("assert:", 1400);
+};

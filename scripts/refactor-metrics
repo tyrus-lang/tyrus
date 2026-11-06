@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""The size portrait tracked between compiler refactor phases.
+
+Reports lines per crate, the largest files, every function above the refactor
+thresholds, and the comment counts. Save the output with the corresponding
+phase notes so later measurements can be compared.
+
+Function length is measured by matching braces outside strings and comments.
+It is close enough to rank functions and to watch the count move, and a handful
+of declarative tables may read a few lines off; the plan treats these numbers
+as a ranking, not as a contract.
+
+Usage: scripts/refactor-metrics [--top N] [--json]
+"""
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE_DIRS = ["crates", "src", "xtask"]
+FN = re.compile(
+    r"^(?P<indent>\s*)(?:pub(?:\([^)]*\))?\s+)?(?:default\s+)?(?:const\s+)?"
+    r"(?:async\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]*\"\s+)?fn\s+(?P<name>[A-Za-z0-9_]+)"
+)
+LONG_FUNCTION = 200
+VERY_LONG_FUNCTION = 500
+
+
+def rust_files() -> list[Path]:
+    files: list[Path] = []
+    for directory in SOURCE_DIRS:
+        files.extend(sorted((ROOT / directory).rglob("*.rs")))
+    return files
+
+
+CHAR_LITERAL = re.compile(r"b?'(?:\\.|[^\\'])'")
+RAW_STRING = re.compile(r'r(#*)"(?:.|\n)*?"\1', re.DOTALL)
+
+
+def strip_code(line: str, state: dict) -> str:
+    """Drop comments, strings and char literals so braces can be counted.
+
+    Byte and char literals matter more than they look: a single `b'{'` in
+    `tyrus-runtime/src/crypto.rs` was enough to report a 40 line function as
+    2.566 lines, because the brace never closed.
+    """
+    if state.get("raw_string"):
+        end = line.find('"' + "#" * state["raw_hashes"])
+        if end < 0:
+            return ""
+        line = line[end + 1 + state["raw_hashes"] :]
+        state["raw_string"] = False
+    if state.get("block_comment"):
+        end = line.find("*/")
+        if end < 0:
+            return ""
+        line = line[end + 2 :]
+        state["block_comment"] = False
+
+    line = CHAR_LITERAL.sub("", line)
+    line = RAW_STRING.sub("", line)
+
+    out, index, in_string = [], 0, False
+    while index < len(line):
+        char = line[index]
+        rest = line[index:]
+        if in_string:
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                in_string = False
+            index += 1
+            continue
+        if rest.startswith("//"):
+            break
+        if rest.startswith("/*"):
+            end = line.find("*/", index + 2)
+            if end < 0:
+                state["block_comment"] = True
+                break
+            index = end + 2
+            continue
+        raw = re.match(r'r(#*)"', rest)
+        if raw:
+            hashes = len(raw.group(1))
+            end = line.find('"' + "#" * hashes, index + raw.end())
+            if end < 0:
+                state["raw_string"] = True
+                state["raw_hashes"] = hashes
+                break
+            index = end + 1 + hashes
+            continue
+        if char == '"':
+            in_string = True
+            index += 1
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def functions(path: Path) -> list[tuple[int, str, int]]:
+    """(length, name, start line) for every function in a file."""
+    lines = path.read_text(errors="replace").split("\n")
+    found = []
+    state: dict = {}
+    index = 0
+    while index < len(lines):
+        match = FN.match(lines[index])
+        if not match:
+            index += 1
+            continue
+        depth = 0
+        opened = False
+        end = index
+        for cursor in range(index, len(lines)):
+            code = strip_code(lines[cursor], state)
+            depth += code.count("{") - code.count("}")
+            if "{" in code:
+                opened = True
+            if opened and depth <= 0:
+                end = cursor
+                break
+            end = cursor
+        found.append((end - index + 1, match.group("name"), index + 1))
+        index = end + 1
+    return found
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--top", type=int, default=15)
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    files = rust_files()
+    per_crate: dict[str, int] = {}
+    per_file: list[tuple[int, str]] = []
+    all_functions: list[tuple[int, str, str, int]] = []
+    comments = doc_comments = safety = allow_dead = allow_clippy = 0
+
+    for path in files:
+        text = path.read_text(errors="replace")
+        lines = text.split("\n")
+        relative = path.relative_to(ROOT).as_posix()
+        crate = "/".join(relative.split("/")[:2]) if relative.startswith("crates/") else relative.split("/")[0]
+        per_crate[crate] = per_crate.get(crate, 0) + len(lines)
+        per_file.append((len(lines), relative))
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped.startswith("//"):
+                comments += 1
+                if stripped.startswith("///") or stripped.startswith("//!"):
+                    doc_comments += 1
+            if "SAFETY:" in line:
+                safety += 1
+            if re.search(r"allow\((dead_code|unused)", line):
+                allow_dead += 1
+            if "allow(clippy::" in line:
+                allow_clippy += 1
+        for length, name, start in functions(path):
+            if length > LONG_FUNCTION:
+                all_functions.append((length, name, relative, start))
+
+    total = sum(per_crate.values())
+    per_file.sort(reverse=True)
+    all_functions.sort(reverse=True)
+    very_long = [item for item in all_functions if item[0] > VERY_LONG_FUNCTION]
+
+    report = {
+        "total_lines": total,
+        "per_crate": dict(sorted(per_crate.items(), key=lambda item: -item[1])),
+        "largest_files": [{"lines": n, "path": p} for n, p in per_file[: args.top]],
+        "functions_over_200": len(all_functions),
+        "functions_over_500": len(very_long),
+        "largest_functions": [
+            {"lines": n, "name": name, "path": path, "line": line}
+            for n, name, path, line in all_functions[: args.top]
+        ],
+        "comment_lines": comments,
+        "doc_comment_lines": doc_comments,
+        "safety_comments": safety,
+        "allow_dead_code": allow_dead,
+        "allow_clippy": allow_clippy,
+    }
+
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return 0
+
+    print(f"total lines in {', '.join(SOURCE_DIRS)}: {total}")
+    print("\nlines per crate:")
+    for crate, count in report["per_crate"].items():
+        print(f"  {count:>8}  {crate}")
+    print(f"\nlargest files (top {args.top}):")
+    for item in report["largest_files"]:
+        print(f"  {item['lines']:>8}  {item['path']}")
+    print(f"\nfunctions over {LONG_FUNCTION} lines: {len(all_functions)}")
+    print(f"functions over {VERY_LONG_FUNCTION} lines: {len(very_long)}")
+    print(f"\nlargest functions (top {args.top}):")
+    for item in report["largest_functions"]:
+        print(f"  {item['lines']:>8}  {item['name']}  {item['path']}:{item['line']}")
+    print("\ncomments:")
+    print(f"  {comments:>8}  lines starting with //")
+    print(f"  {doc_comments:>8}  of those are /// or //!")
+    print(f"  {safety:>8}  SAFETY: comments (never drop one in phase 4)")
+    print("\nsuppressions:")
+    print(f"  {allow_dead:>8}  allow(dead_code) / allow(unused)")
+    print(f"  {allow_clippy:>8}  allow(clippy::...)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

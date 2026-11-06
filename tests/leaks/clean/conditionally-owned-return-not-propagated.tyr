@@ -1,0 +1,52 @@
+// A conditional ownership bit, forwarded through a hand-off.
+//
+// `conditional` (see `refused-owned-return`) tells its own caller, at
+// runtime, whether the `Map` it returned needs freeing. `wrap` calls it and
+// returns what it got back unchanged, but the static return-shape analysis
+// only recognized a `return` as owned when the returned name was bound
+// directly from an allocating expression (`Map`/`Set`); `inner` here
+// is bound from a *call* to a conditionally-owned function, which the
+// analysis did not recognize as either an allocation or a plain borrow. So
+// `wrap` was classified as neither all-owned nor conditionally-owned:
+// nothing registered its return at all, its caller treated it as borrowed,
+// and the fresh allocation `conditional` made on the `flag: false` path
+// leaked, the same failure mode this whole file's ownership tracking
+// exists to close, one hand-off removed.
+//
+// Closed by teaching the analysis to look *through* a callee already
+// classified: `allocates` now also recognizes a direct or bound call to a
+// function in `fn_owned_returns` (this closed the same gap for an
+// unconditionally-owned wrapper too, a shape this file never had a case for
+// before), and a `ReturnOwnership::Forwarded` variant marks a `return` whose
+// name (or whose expression directly) came from a call to a function in
+// `fn_conditionally_owned_returns`. A function with any `Forwarded` or
+// `Owned` return alongside a `Borrowed` one (or a lone `Forwarded` return, as
+// here) is itself conditionally-owned. At codegen, `Forwarded` does not write
+// a fresh constant to the `tyrus.return.owned` bit: it re-reads the bit the
+// inner call already set, found in `conditionally_owned_vars` for the
+// bound-then-returned case, and stores that value onward, so ownership
+// survives any number of chained wrappers, not just one.
+const conditional = (flag: boolean, source: Map<string, i32>): Map<string, i32> => {
+    if (flag) {
+        return source;
+    }
+    const fresh = Map<string, i32>();
+    fresh.set("b", 2);
+    return fresh;
+};
+
+const wrap = (flag: boolean, source: Map<string, i32>): Map<string, i32> => {
+    const inner = conditional(flag, source);
+    return inner;
+};
+
+const main = (): void => {
+    const shared = Map<string, i32>();
+    shared.set("a", 1);
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += wrap(false, shared).size;
+    }
+    console.log(total);
+    console.log("assert:", 200);
+};

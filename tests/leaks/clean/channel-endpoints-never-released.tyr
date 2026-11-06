@@ -1,0 +1,62 @@
+// `const [tx, rx] = channel<T>(n);` leaked the whole channel, sender, receiver,
+// tokio's own buffer and the capacity box, and, in a loop, one full set per
+// iteration. Four separate gaps had to close for this to reach zero, each found
+// by measuring after the previous one rather than by reading ahead.
+//
+// **No frame, no teardown.** An `async` function that never actually suspends
+// got no heap frame, so no drop glue was emitted and `tyrus_async_task_new` was
+// handed a null one: every owned local it declared had nothing anywhere to
+// release it. The boundary was exact and is what located the whole thing,
+// adding a single `await` to the same program freed all three allocations. The
+// frame condition now also asks whether any local owns something.
+//
+// **A loop overwrote the slot.** The frame has one slot per name and one
+// teardown, so a loop redeclaring `[tx, rx]` released only the last iteration's
+// endpoints. `VarDecl` has always cleared the previous value before storing;
+// the destructure stored straight over it.
+//
+// **The capacity box.** `capacity?` crosses the ABI as a pointer to a boxed
+// `usize` and the runtime copies the value out before returning, so the box is
+// dead the moment the call is done, freed there now, where its lifetime
+// provably ends.
+//
+// **The received message box.** `tryRecv()` hands back the very box `trySend`
+// allocated, so the caller owns it; the frame cloned it and released the clone,
+// leaving the original with no owner. Freed for a `Copy` payload, where the box
+// is the whole allocation. A payload that owns memory of its own is a separate,
+// narrower question and stays recorded in `known/` rather than guessed at.
+//
+// One attempt is worth recording because it looked right and did nothing:
+// registering the loaded pair as an owned `[Sender<T>, Receiver<T>]` at the
+// construction site, so the destructure's existing per-element redistribution
+// would claim each endpoint. The type it built was correct, the registration
+// fired, and the leak stayed byte-for-byte identical, because in an `async`
+// function that redistribution path is inert by construction. It was reverted
+// rather than kept as a no-op that reads like a fix.
+// A `string` payload is covered too: the message box the sender allocated is
+// released through the ordinary drop glue, so the text inside goes with it.
+// Narrowing rather than `??` on purpose, `??` has its own, unrelated leak,
+// recorded in `known/optional-coalesce-of-a-string.tyr`, and using it here
+// would measure that instead of this.
+import { channel } from "tyrus:task";
+
+export async function main(): Promise<void> {
+    let total: u64 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const [tx, rx] = channel<u64>(1);
+        const accepted = tx.trySend(1);
+        const drained = rx.tryRecv();
+        total += (drained ?? 0) + (accepted ? 1 : 0);
+        rx.close();
+
+        const [wtx, wrx] = channel<string>(1);
+        wtx.trySend("payload");
+        const text = wrx.tryRecv();
+        if (text) {
+            total += text.length as u64;
+        }
+        wrx.close();
+    }
+    console.log(total);
+    console.log("assert:", 1800);
+}

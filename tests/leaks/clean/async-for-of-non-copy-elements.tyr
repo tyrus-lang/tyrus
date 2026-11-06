@@ -1,0 +1,35 @@
+// An async `for...of` binding is a view of the element, never a copy the
+// frame owns: iterating strings and interfaces, with and without an `await`
+// in the body, must neither leak nor release what the array still owns.
+interface Paint {
+    name: string;
+    shade: i32;
+}
+
+async function iterate(round: i32): Promise<i32> {
+    const paints: Paint[] = [{ name: "sky".repeat(2), shade: round }, { name: "leaf".repeat(2), shade: 2 }];
+    let total: i32 = 0;
+    for (const paint of paints) {
+        total = total + paint.shade + paint.name.length as i32;
+    }
+    await Promise.resolve<void>();
+    const words: string[] = ["a".repeat(3), "b".repeat(3)];
+    for (const word of words) {
+        await Promise.resolve<void>();
+        total = total + word.length as i32;
+    }
+    for (const paint of paints) {
+        await Promise.resolve<void>();
+        total = total + paint.name.length as i32;
+    }
+    return total;
+}
+
+async function main(): Promise<void> {
+    let sum: i32 = 0;
+    for (let round: i32 = 0; round < 200; round += 1) {
+        const value: i32 = await iterate(round);
+        sum = sum + value;
+    }
+    console.log(sum);
+}

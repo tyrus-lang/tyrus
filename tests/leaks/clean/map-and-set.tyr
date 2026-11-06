@@ -1,0 +1,12 @@
+// Each `Map` and `Set` owns a native hash table released at scope exit.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const scores = Map<string, i32>();
+        scores.set("a", 1);
+        const seen = Set<i32>();
+        seen.add(1);
+        total += scores.size + seen.size;
+    }
+    console.log(total);
+};

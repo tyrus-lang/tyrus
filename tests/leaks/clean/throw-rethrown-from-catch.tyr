@@ -1,0 +1,74 @@
+// A caught value, rethrown from inside its own `catch` block, once, and
+// twice in a row through nested handlers.
+//
+// The thrown value's ownership is decided at the throw site, `throw held`
+// checks whether `held` was a scope-owned allocation. A catch binding
+// (`error` in `catch (error: string)`) is never registered as scope-owned,
+// deliberately: whether it may be freed depends on runtime provenance, not a
+// static fact about the binding, so the ownership question is answered by the
+// bit the original throw set, not by the catch mechanism.
+//
+// Rethrowing `error` used to ask the same static question again, and `error`
+// looks like any other local, the runtime bit that proved the *original*
+// throw was owned was never consulted, so the string leaked further up
+// instead of being freed once more per hop.
+//
+// The fix threads that bit through: each `catch` that binds a `string`
+// remembers where its ownership bit lives, and a `throw` of exactly that
+// binding loads it instead of statically recomputing (which would always say
+// "not owned", since the binding still is not a registered scope-owned
+// local). A static string rethrown the same way is still never freed, the
+// bit it carries says so, and a rethrow chain three handlers deep still
+// frees exactly once, at whichever handler stops rethrowing.
+//
+// Expected output is 3400.
+const risky = (): string throws string => {
+    const held: string = "a".toUpperCase();
+    throw held;
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        try {
+            try {
+                total += risky().length;
+            } catch (error: string) {
+                total += error.length;
+                throw error;
+            }
+        } catch (outer: string) {
+            total += outer.length;
+        }
+
+        try {
+            try {
+                throw "static";
+            } catch (error: string) {
+                total += error.length;
+                throw error;
+            }
+        } catch (outer: string) {
+            total += outer.length;
+        }
+
+        try {
+            try {
+                try {
+                    const inner: string = "a".toUpperCase();
+                    throw inner;
+                } catch (first: string) {
+                    total += first.length;
+                    throw first;
+                }
+            } catch (second: string) {
+                total += second.length;
+                throw second;
+            }
+        } catch (third: string) {
+            total += third.length;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 3400);
+};

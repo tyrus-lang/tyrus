@@ -1,0 +1,18 @@
+id = "tyrus"
+name = "Tyrus"
+version = "0.1.0"
+schema_version = 1
+authors = ["Tyrus contributors"]
+description = "Tyrus language support: connects Zed to the Tyrus language server."
+repository = "https://github.com/tyrus-lang/tyrus"
+
+[language_servers.tyr]
+name = "Tyrus"
+languages = ["tyrus"]
+
+# The Tree-sitter grammar lives in this repository under editors/tree-sitter-tyrus.
+# Set `commit` to the published SHA that contains it before publishing to Zed.
+[grammars.tyr]
+repository = "https://github.com/tyrus-lang/tyrus"
+path = "editors/tree-sitter-tyrus"
+commit = "0000000000000000000000000000000000000000"

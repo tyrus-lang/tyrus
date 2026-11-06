@@ -1,0 +1,24 @@
+// `charAt` builds a fresh single-character string but was missing from
+// `string_method_allocates`, so nothing ever claimed it, 2 bytes leaked per
+// call regardless of whether the result was bound, discarded, or rebound.
+// Closed by adding it to the allow-list; no new release logic was needed,
+// since the existing `record_owned_native_result` call site already covers
+// any method the list names.
+//
+// Expected output is 400.
+const main = (): void => {
+    const message: string = "hello";
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const ch: string = message.charAt(1);
+        total += ch.length;
+        // Unbound temporary: never named, swept by the same end-of-scope path.
+        message.charAt(0);
+        // Rebind: the previous `ch` must be released before this overwrites it.
+        let rebound: string = message.charAt(2);
+        rebound = message.charAt(3);
+        total += rebound.length;
+    }
+    console.log(total);
+    console.log("assert:", 400);
+};

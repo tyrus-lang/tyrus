@@ -1,0 +1,36 @@
+// `notify()`'s `options` materializes an object literal into `NotifyOptions`
+// through the same `emit_expr_as` path `tyrus:cli`'s prompt options already
+// use, each optional field (`icon`/`urgency`/`timeout`) boxes the way any
+// `T?` does, read back on the Rust side through `unbox_str`/`unbox_i32`/
+// `unbox_u32`. `openUrl`/`trash` return `Result<void, OsError>` with static
+// `code`/`message` strings; the selected result variant owns its payload.
+// Kept to 3
+// iterations, not the usual 200: `notify()` pops a real, visible desktop
+// notification every call.
+import { NotifyOptions, NotifyUrgency, OsError, notify, openUrl, trash } from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 3; i += 1) {
+        notify("Build", "no options");
+        notify("Build", "with options", { icon: "dialog-information", urgency: NotifyUrgency.Low, timeout: 1 });
+
+        match (openUrl("not-a-real-scheme://nope")) {
+            Ok() => {}
+            Err(error) => {
+                total += error.code.length;
+                total += error.message.length;
+            }
+        }
+
+        match (trash("/tmp/does-not-exist-tyrus-leak-test")) {
+            Ok() => {}
+            Err(error) => {
+                total += error.code.length;
+                total += error.message.length;
+            }
+        }
+    }
+    console.log(total > 0);
+    console.log("assert:", true);
+};

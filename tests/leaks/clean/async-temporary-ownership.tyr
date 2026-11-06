@@ -1,0 +1,43 @@
+// Async expression temporaries must be released after the frame clones or consumes them.
+// This combines transferred optional string elements, splice insertion storage, a template returned by an async closure, direct console arguments, repetition, and nested suspension.
+
+async function exerciseIteration(): Promise<usize> {
+    let labels: string[] = ["first", "middle", "last"];
+    await Promise.resolve<void>();
+    labels.push("tail".toUpperCase());
+    labels.reverse();
+    const first: string? = labels.pop();
+    const tail: string? = labels.shift();
+    await Promise.resolve<void>();
+    const firstText: string = first ?? "missing";
+    const tailText: string = tail ?? "missing";
+
+    let mutated: string[] = ["charlie", "bravo", "alpha"];
+    await Promise.resolve<void>();
+    const removed: string[] = mutated.splice(1, 1, "delta".toUpperCase());
+    mutated = mutated.concat(["tail".toUpperCase()]);
+
+    const describe = async (): Promise<string> => {
+        const resolved: string = await Promise.resolve<string>("Ada");
+        return `name: ${resolved}`;
+    };
+    const description: string = await describe();
+    return firstText.length + tailText.length + removed[0].length + mutated[1].length + description.length;
+}
+
+const main = async (): Promise<void> => {
+    let total: usize = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const iterationTotal: usize = await exerciseIteration();
+        total += iterationTotal;
+    }
+
+    let displayed: string[] = ["visible"];
+    await Promise.resolve<void>();
+    const value: string? = displayed.pop();
+    await Promise.resolve<void>();
+    console.log(value ?? "missing");
+    console.log("assert:", "visible");
+    console.log(total);
+    console.log("assert:", 5600);
+};

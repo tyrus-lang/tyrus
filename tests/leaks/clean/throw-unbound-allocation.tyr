@@ -1,0 +1,36 @@
+// `throw "a".toUpperCase();`, an allocating call thrown directly, never
+// bound to a name, failed to compile at all: `error[codegen]: invalid LLVM
+// IR: "Instruction does not dominate all uses"`.
+//
+// The call's result registers a pending native result the same way any
+// other allocating call does. Nothing in `emit_throw` ever transferred or
+// forgot that registration, so it stayed pending indefinitely, past the
+// `throw` itself, which crosses into the `catch` body through a real
+// `setjmp`/`longjmp`, not through this SSA value at all (the caught value
+// is reloaded from memory, the same way `throw-value-provenance` already
+// relies on). Some later, unrelated cleanup pass eventually discovered the
+// still-pending entry and tried to free it using the stale SSA handle, at
+// whatever position the builder happened to be in by then, structurally
+// unreachable from the block that computed it. LLVM's verifier catches
+// this as a dominance violation before the program ever runs, which is why
+// this was a build failure rather than a runtime crash.
+//
+// Closed by forgetting the pending registration in `emit_throw`, right after
+// evaluating the thrown expression, the same thing `emit_null_coalesce`
+// already does for a value it is about to handle itself. The thrown value's
+// actual lifetime is owned by the existing throw/catch runtime bit
+// (`emit_thrown_value_owned_bit` / the catch body's own `err_owned` check),
+// not by the generic pending-result mechanism, so nothing else needs to
+// track it once the throw has taken it over.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        try {
+            throw "a".toUpperCase();
+        } catch (e: string) {
+            total += e.length;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 200);
+};

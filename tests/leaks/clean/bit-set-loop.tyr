@@ -1,0 +1,30 @@
+// BitSet set/clear/count/isEmpty/isSubset/isSuperset/union/intersection/difference/complement in a 200-iteration loop.
+import { BitSet } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const bs = BitSet(64);
+        bs.set(3);
+        bs.set(9);
+        const other = BitSet(64);
+        other.set(3);
+        const u = bs.union(other);
+        total += u.count();
+        const i2 = bs.intersection(other);
+        total += i2.count();
+        const d = bs.difference(other);
+        total += d.count();
+        const c = bs.complement();
+        total += c.count();
+        if (bs.isSubset(other)) {
+            total += 1;
+        }
+        if (other.isSuperset(bs)) {
+            total += 1;
+        }
+        total += bs.count();
+    }
+    console.log(total);
+    console.log("assert:", 13600);
+};

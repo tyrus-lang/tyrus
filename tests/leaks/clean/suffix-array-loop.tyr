@@ -1,0 +1,20 @@
+// suffixArray in a 200-iteration loop, with a rebind, unbound temporaries, an
+// empty string, and a single character each iteration.
+import { suffixArray } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let a = suffixArray("banana");
+        total += a.length;
+        a = suffixArray("cocoa");
+        total += a.length;
+        total += suffixArray("mississippi").length;
+        total += suffixArray("").length;
+        total += suffixArray("a").length;
+        const b: usize[] = suffixArray("abracadabra");
+        total += b.length;
+    }
+    console.log(total);
+    console.log("assert:", 6800);
+};

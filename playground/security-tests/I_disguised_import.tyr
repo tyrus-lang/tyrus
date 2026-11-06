@@ -1,0 +1,11 @@
+// Snippet I: a forbidden import disguised by a comment, must fail with --sandbox.
+//
+// The backend's text filter matched `from\s*"tyrus:fs"`, which a comment
+// between the keyword and the string defeats. This compiled and returned a
+// WASM module until the rule moved into the compiler, where it is applied to
+// resolved imports instead of to text.
+import { readFile } from /* not a space */ "tyrus:fs";
+
+const main = (): void => {
+    console.log("should never compile in a sandbox");
+};

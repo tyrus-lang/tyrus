@@ -1,0 +1,31 @@
+// An array literal whose elements are all static strings leaked its data
+// buffer, 16 bytes per iteration. The elements are not allocations and must
+// not be released, but the buffer holding them is one. `ReleasePlan::Buffer`
+// expresses exactly that release.
+//
+// Two earlier attempts at claiming it each aborted every example in
+// the examples suite with a double free, both blamed on the buffer escaping into
+// a native callee that frees it, `Promise.all([...])` was named specifically.
+// Re-examined while returning to this case: `Promise.all`'s own runtime
+// (`combinator` in `tyrus-runtime`) never frees the caller's input buffer at
+// all, it borrows it via `slice::from_raw_parts` and makes its own `Vec`
+// copy. Reconstructing both original crash shapes exactly (a static-string
+// array standalone, and one passed through `Promise.all`) now measures zero
+// leaks and zero invalid frees, confirmed against the full test suite and a
+// wider battery, a user function taking the array, a mixed literal with one
+// owned and one static element, a `Copy`-element literal used as a method
+// receiver. Whatever caused the original two aborts, it is not present now,
+// most plausibly fixed as a side effect of other work this session, the same
+// way `array-literal-passed-to-a-callee` closed on its own earlier, confirmed
+// by measurement rather than by tracing back to a specific commit.
+//
+// Expected output is 400.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const names: string[] = ["a", "b"];
+        total += names.length;
+    }
+    console.log(total);
+    console.log("assert:", 400);
+};

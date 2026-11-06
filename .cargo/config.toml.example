@@ -1,0 +1,12 @@
+# Local build configuration for contributors (not committed).
+# Copy this file to `.cargo/config.toml` and set the prefix to your LLVM 23.1.1
+# installation so `llvm-sys` can locate it.
+#
+# The value below is where an official LLVM release tarball is commonly
+# extracted; for a distribution package it is usually `/usr/lib/llvm-23`.
+#
+# Prefer this over exporting the variable from a shell profile: it travels with
+# the checkout, and it also applies to builds started by an editor or an IDE,
+# which do not read an interactive shell's profile.
+[env]
+LLVM_SYS_231_PREFIX = "/opt/llvm-23.1.1"

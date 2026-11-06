@@ -1,0 +1,58 @@
+[package]
+name = "tyrus-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# `system-allocator` keeps mimalloc out: AddressSanitizer must own `malloc`,
+# and with mimalloc as the global allocator every target crashes at startup.
+tyrus-runtime = { path = "../crates/tyrus-runtime", features = ["fuzzing", "system-allocator"] }
+
+[[bin]]
+name = "crypto_phc"
+path = "fuzz_targets/crypto_phc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "crypto_jwt_jwk"
+path = "fuzz_targets/crypto_jwt_jwk.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "crypto_aes_envelope"
+path = "fuzz_targets/crypto_aes_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "crypto_utf8_ffi"
+path = "fuzz_targets/crypto_utf8_ffi.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "archive_list_unpack"
+path = "fuzz_targets/archive_list_unpack.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compress_decompress"
+path = "fuzz_targets/compress_decompress.rs"
+test = false
+doc = false
+bench = false

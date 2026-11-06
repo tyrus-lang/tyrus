@@ -1,0 +1,37 @@
+// Operations that allocate, exercised together. Kept because the leak it once
+// showed was invisible to every single-category case: each operation here
+// measured zero on its own, and only the combination leaked 12 bytes per
+// iteration.
+//
+// The cause was the array literal used as a method receiver. `[1, 2, 3].map(...)`
+// leaks its buffer if only a literal *bound to a name* is claimed, and every
+// isolated array case happened to bind first. Found by bisecting this file.
+interface Account {
+    owner: string;
+    label: string;
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const owner: string = "ada lovelace".toUpperCase();
+        const label: string = owner.slice(0, 3).trim().padEnd(5, ".");
+        total += label.length;
+
+        const doubled: i32[] = [1, 2, 3].map((value: i32): i32 => value * 2);
+        total += doubled.filter((value: i32): boolean => value > 2).length;
+
+        const parts: string[] = "alpha,beta,gamma".split(",");
+        total += parts.length;
+
+        const account: Account = { owner: owner, label: label };
+        total += account.owner.length;
+
+        const seen = Set<string>();
+        seen.add(label);
+        const counts = Map<string, i32>();
+        counts.set(label, 1);
+        total += seen.size + counts.size;
+    }
+    console.log(total);
+};

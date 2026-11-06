@@ -1,0 +1,65 @@
+// `mime`'s (and, sharing the same codegen, `clipboardRead`/`desktopDir`/
+// `documentsDir`/`whoami`'s) `string?` result was passed through
+// `record_owned_native_result` as the raw payload pointer standing in for the
+// `Optional<Str>` box the rest of the compiler expects every `Optional` to
+// be, every other native `Optional<Str>` result already boxes on the
+// runtime side (`box_optional_pointer`, first written for `os.rs`); `mime`
+// alone skipped it. `??`/narrowing on a present result then read the box's
+// first bytes as a nested pointer, which for `mime` corrupted the process
+// (the string's own leading bytes fed to `strdup` as an address, segfaulting
+// on the very first non-null call) and, once boxed correctly, exposed a
+// second bug: the `??` "is the payload provably an allocation" check only
+// recognized `OptionalMethodCall`, so a direct call like `mime(path)` kept
+// its 200-call leak even after the box was fixed. Closed by boxing `mime`'s
+// result in `fs.rs` (`box_optional_pointer`, matching `os.rs`) and by
+// extending `??`'s provably-owned check to the specific native builtins that
+// box a nullable native string this way. Covers the loop case, an unbound
+// temporary, a bound name via `??`, a rebind, and narrowing with `if`.
+import { mime, writeFileSync, type FsError } from "tyrus:fs";
+import { desktopDir, documentsDir, whoami, clipboardRead } from "tyrus:os";
+
+const main = (): void => {
+    try {
+        writeFileSync("./fs-optional-string-leak.txt", "hello");
+    } catch (e: FsError) {}
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const present: string = mime("./fs-optional-string-leak.txt") ?? "unknown";
+        console.log(present.length > 0);
+        console.log("assert:", true);
+
+        const absent: string = mime("./fs-optional-string-leak-no-ext") ?? "unknown";
+        console.log(absent.length > 0);
+        console.log("assert:", true);
+
+        // Unbound temporary: never named, swept by the same end-of-scope path.
+        mime("./fs-optional-string-leak.txt");
+
+        // Rebind: the previous `rebound` box/payload must be released before
+        // this overwrites it.
+        let rebound: string = mime("./fs-optional-string-leak.txt") ?? "unknown";
+        rebound = mime("./fs-optional-string-leak.txt") ?? "unknown";
+        console.log(rebound.length > 0);
+        console.log("assert:", true);
+
+        // Narrowing (no `??`): the box itself, not just its payload, must
+        // still be released once its content has been read.
+        const narrowed = mime("./fs-optional-string-leak.txt");
+        if (narrowed) {
+            console.log(narrowed.length > 0);
+            console.log("assert:", true);
+        }
+
+        const desktop: string = desktopDir() ?? "none";
+        console.log(desktop.length >= 0);
+        console.log("assert:", true);
+        const documents: string = documentsDir() ?? "none";
+        console.log(documents.length >= 0);
+        console.log("assert:", true);
+        const name: string = whoami() ?? "none";
+        console.log(name.length >= 0);
+        console.log("assert:", true);
+        const clipboard: string = clipboardRead() ?? "none";
+        console.log(clipboard.length >= 0);
+        console.log("assert:", true);
+    }
+};

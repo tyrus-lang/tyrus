@@ -1,0 +1,28 @@
+// The counter-example to `async-catch-binding-released-when-the-handler-throws`.
+// The `throw` here is caught by a `try` inside the handler, so control comes
+// back and the binding is read afterwards. Releasing on every `throw` without
+// asking where it lands would free what the next line reads, turning a leak
+// into a use-after-free, so this case fails loudly if that line is ever crossed.
+import { FsError, readFile } from "tyrus:fs";
+
+async function run(): Promise<usize> {
+    try {
+        await readFile("./tyrus-file-that-does-not-exist.txt");
+    } catch (error: FsError) {
+        try {
+            throw "swallowed";
+        } catch (inner: string) {
+        }
+        return error.code.length;
+    }
+    return 0;
+}
+
+const main = async (): Promise<void> => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const step: usize = await run();
+        total += step;
+    }
+    console.log(total);
+};

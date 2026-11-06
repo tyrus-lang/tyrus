@@ -1,0 +1,41 @@
+// Rendering a union inside a template literal dispatches on the tag and joins
+// the arms with a `phi`. The arms disagree about ownership: `"pending"` is a
+// pointer into read-only memory whose release is a no-op, while a rendered
+// number is freshly allocated and has to be freed exactly once.
+//
+// That disagreement is the whole reason this case exists. The ownership bit
+// travels inside the `string` value, so the release after the interpolation is
+// correct for whichever arm ran, but a `phi` that lost the bit, or an arm that
+// forgot to set it, leaks on one path and double-frees on the other, and both
+// happen only for the variant that is live at run time.
+//
+// The loop is what makes a per-iteration mistake add up to something the corpus
+// can measure rather than a single stray allocation.
+type Status = "active" | "inactive" | "pending";
+type Mixed = i32 | string;
+
+function pick(round: i32): Status {
+    if (round % 3 === 0) {
+        return "active";
+    }
+    if (round % 3 === 1) {
+        return "inactive";
+    }
+    return "pending";
+}
+
+export function main(): void {
+    let letters: usize = 0;
+    for (let round: i32 = 0; round < 300; round += 1) {
+        const status: Status = pick(round);
+        const line: string = `status=${status}`;
+        letters += line.length;
+
+        const number: Mixed = round;
+        const text: Mixed = "words";
+        const mixed: string = `${number}/${text}`;
+        letters += mixed.length;
+    }
+    console.log(letters);
+    console.log("assert:", 6790);
+}

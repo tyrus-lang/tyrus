@@ -1,0 +1,72 @@
+// A `break` or a `continue` terminates the block, so the scope cleanup that
+// runs on the fall-through path was skipped entirely, the same hole `throw`
+// had. Roughly 3 bytes per iteration, for as long as the loop runs.
+//
+// Unlike a `return` or a `throw`, this is a *partial* unwind. It releases what
+// the loop body owns and stops there: releasing further would free the loop's
+// own bindings, the `for` counter among them, while the loop is still running.
+// The depth to stop at is recorded when the loop control is pushed.
+//
+// The shapes below pin the boundary down, and the first version of the fix got
+// it wrong in a way that leaked silently rather than failing: it recorded the
+// depth *after* the body scope was pushed, so the range of scopes to release
+// came out empty and every figure here stayed exactly as it had been. A fix
+// that changes nothing looks identical to a fix that works, unless the numbers
+// are read.
+//
+// `switch-inside-a-loop` matters separately: a `switch` pushes its break target
+// before its case scopes exist, a loop pushes its own after the body scope, so
+// the two record their depth differently and a `break` has to reach the right
+// one.
+//
+// Expected output is 1800.
+const main = (): void => {
+    let total: usize = 0;
+
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const held: string = "ab".toUpperCase();
+        total += held.length;
+        continue;
+    }
+
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const outer: string = "xy".toUpperCase();
+        for (let j: i32 = 0; j < 3; j += 1) {
+            const inner: string = "zw".toUpperCase();
+            total += inner.length;
+            break;
+        }
+        total += outer.length;
+    }
+
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const held: string = "ab".toUpperCase();
+        switch (i % 2) {
+            case 0:
+                total += held.length;
+                break;
+            default:
+                break;
+        }
+    }
+
+    let j: i32 = 0;
+    while (j < 200) {
+        j += 1;
+        const held: string = "cd".toUpperCase();
+        if (j % 2 === 0) {
+            continue;
+        }
+        total += held.length;
+    }
+
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const kept: Map<string, i32> = Map<string, i32>();
+        kept.set("a", 1);
+        total += kept.size;
+        continue;
+    }
+
+    console.log(total);
+    console.log("assert:", 1800);
+};

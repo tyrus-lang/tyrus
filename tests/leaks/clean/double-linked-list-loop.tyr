@@ -1,0 +1,29 @@
+// DoubleLinkedList pushFront/pushBack/popFront/popBack/front/back/len/isEmpty/clear in a 200-iteration loop.
+import { DoubleLinkedList } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const dll = DoubleLinkedList<i32>();
+        dll.pushBack(10);
+        dll.pushFront(20);
+        dll.pushBack(30);
+        total += dll.len();
+        const f: i32? = dll.front();
+        if (f) {
+            total += 1;
+        }
+        const b: i32? = dll.back();
+        if (b) {
+            total += 1;
+        }
+        const p: i32? = dll.popFront();
+        if (p) {
+            total += 1;
+        }
+        total += dll.len();
+        dll.clear();
+    }
+    console.log(total);
+    console.log("assert:", 1600);
+};

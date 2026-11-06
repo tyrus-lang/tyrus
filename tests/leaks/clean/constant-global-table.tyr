@@ -1,0 +1,34 @@
+// A global `const` array is emitted as a constant buffer in read-only memory,
+// so there is nothing to allocate and nothing to release.
+//
+// This is here rather than only in an IR test because the danger of the
+// optimization is exactly a release: if the end of `main` still freed the
+// header's pointer, or a mutation still reallocated it, the target would be
+// `.rodata` and the result a fault rather than a leak. The corpus fails a case
+// that corrupts whatever its byte count says, which is the check that matters
+// for this shape.
+//
+// The tables are read the two ways the analysis permits, by index and by
+// `.length`, and the loop is what would make a per-iteration mistake visible.
+// A non-promoted global is covered by the cases around it; the promotion is
+// refused for anything that could move or grow the buffer.
+const PRIMES: i32[] = [2, 3, 5, 7, 11, 13, 17, 19];
+const LABELS: string[] = ["alpha", "beta", "gamma"];
+
+export function main(): void {
+    let sum: usize = 0;
+    let letters: usize = 0;
+    for (let round: i32 = 0; round < 200; round += 1) {
+        for (let index: i32 = 0; index < 8; index += 1) {
+            sum += PRIMES[index] as usize;
+        }
+        const slot: i32 = round % 3;
+        letters += LABELS[slot].length + LABELS.length;
+    }
+    console.log(sum);
+    console.log("assert:", 15400);
+    console.log(letters);
+    console.log("assert:", 1533);
+    console.log(PRIMES.length);
+    console.log("assert:", 8);
+}

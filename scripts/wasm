@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+#
+# Rebuilds the WASM runtime staticlib the playground links against.
+#
+# `scripts/tyrus` builds and installs the *native* compiler and runtime. The
+# playground links a different artifact entirely,
+# `target/wasm32-unknown-unknown/<profile>/libtyrus_runtime_wasm.a`, and until
+# this script existed nothing in the repository produced it. So it aged: a
+# staticlib built weeks earlier kept being linked against a compiler that had
+# moved on, and the mismatch surfaced to playground users as a link error
+# naming a function nobody had touched.
+#
+# That staleness is not cosmetic. `tyrus build --compile-target wasm` passes
+# `--fatal-warnings` to `wasm-ld` on purpose (see `src/main.rs`): a runtime
+# function whose signature disagrees with the one codegen declared is otherwise
+# only a warning, and `wasm-ld` quietly links a stub that traps when called.
+# Failing the link turns a silent runtime landmine into a build error, but the
+# error only tells the truth when the staticlib is current.
+#
+# Usage:
+#   scripts/wasm              # release, the profile the playground ships
+#   scripts/wasm debug        # debug, for a faster edit loop
+#   scripts/wasm --check      # verify a program actually links, then stop
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+profile="release"
+check_link="no"
+for argument in "$@"; do
+    case "${argument}" in
+    release | debug) profile="${argument}" ;;
+    --check) check_link="yes" ;;
+    *)
+        echo "error: unknown argument \`${argument}\`; expected \`release\`, \`debug\` or \`--check\`." >&2
+        echo "usage: scripts/wasm [release|debug] [--check]" >&2
+        exit 2
+        ;;
+    esac
+done
+
+if ! rustup target list --installed 2>/dev/null | grep -qx "wasm32-unknown-unknown"; then
+    echo "error: the \`wasm32-unknown-unknown\` target is not installed." >&2
+    echo "install it with: rustup target add wasm32-unknown-unknown" >&2
+    exit 1
+fi
+
+echo "==> Building the WASM runtime staticlib (${profile})"
+if [ "${profile}" = "release" ]; then
+    cargo build --package tyrus-runtime-wasm --target wasm32-unknown-unknown --release
+else
+    cargo build --package tyrus-runtime-wasm --target wasm32-unknown-unknown
+fi
+
+library="target/wasm32-unknown-unknown/${profile}/libtyrus_runtime_wasm.a"
+if [ ! -f "${library}" ]; then
+    echo "error: the build reported success but \`${library}\` is missing." >&2
+    exit 1
+fi
+echo "==> Built ${library}"
+
+# The compiler resolves the staticlib relative to its own binary, so a stale
+# `tyrus` finds a fresh staticlib and still emits the old calls. Both sides have
+# to move together.
+echo "==> Rebuilding the compiler so both sides agree"
+cargo build --package tyrus
+
+if [ "${check_link}" = "no" ]; then
+    echo
+    echo "WASM runtime is current. Run \`scripts/wasm --check\` to prove a program links."
+    exit 0
+fi
+
+# Compiling is not linking. Every existing gate, the signature-parity test, the
+# wasm IR test, `cargo check`, stops before `wasm-ld` joins the two objects,
+# which is exactly where a calling-convention disagreement becomes visible. This
+# check is the only thing here that runs the real linker against the real
+# staticlib.
+echo "==> Linking the Playground Fibonacci example and runtime string operations"
+workspace="$(mktemp -d)"
+trap 'rm -rf "${workspace}"' EXIT
+wasm_runtime="${project_dir}/${library}"
+mkdir -p "${workspace}/src"
+printf '{ "project": { "name": "wasm-link-check", "version": "0.1.0" } }\n' >"${workspace}/tyrus.json"
+cat >"${workspace}/src/main.tyr" <<'PROGRAM'
+function fibonacci(n: i32): i32 {
+    if (n <= 1) {
+        return n;
+    }
+
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+const main = (): void => {
+    print(`fibonacci(10) = ${fibonacci(10)}`);
+    print("runtime return".toUpperCase());
+};
+PROGRAM
+
+if (cd "${workspace}" && TYRUS_WASM_RUNTIME_LIB="${wasm_runtime}" "${project_dir}/target/debug/tyrus" build --compile-target wasm); then
+    echo
+    echo "WASM runtime is current and a program links."
+else
+    echo
+    echo "The staticlib is current, but the link failed, the compiler and the" >&2
+    echo "runtime disagree about a signature. wasm-ld names the symbol above." >&2
+    echo >&2
+    echo "The usual cause is a native runtime function that gained or changed a" >&2
+    echo "signature without its wasm counterpart following. Compare the symbol" >&2
+    echo "against crates/tyrus-runtime-wasm/src/stubs/stubs.rs, which has to declare" >&2
+    echo "every symbol the codegen emits with the same argument types, and the" >&2
+    echo "modules that crate shares by #[path] with crates/tyrus-runtime." >&2
+    echo >&2
+    echo "Note that wasm32 passes a struct larger than one register indirectly," >&2
+    echo "so a signature that agrees on the native target can still disagree" >&2
+    echo "here, a string argument is the case that has bitten this before." >&2
+    exit 1
+fi

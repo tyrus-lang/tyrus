@@ -1,0 +1,19 @@
+// An object literal claims itself when every string field came from an
+// allocation, so the fields are released with it. Used to leak 2 bytes per
+// iteration.
+//
+// An object mixing allocated and static string fields is deliberately not
+// claimed: the release frees the string fields as a group, and a static one
+// must never be freed. See `known/object-with-mixed-strings.tyr`.
+interface User {
+    name: string;
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const user: User = { name: "a".toUpperCase() };
+        total += user.name.length;
+    }
+    console.log(total);
+};

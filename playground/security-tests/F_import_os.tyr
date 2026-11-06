@@ -1,0 +1,15 @@
+// Snippet F: Import tyrus:os, must fail with --sandbox.
+//
+// Named F_import_process.tyr until it was found to be testing nothing.
+//
+// This snippet used to import `tyrus:process`, which is not a module the
+// language has: process information lives in the ambient `process` namespace
+// and `tyrus:os` carries the operating-system capabilities. The old import was
+// rejected as "unsupported native module", so the test passed without ever
+// exercising the sandbox rule it claimed to check.
+import { cpus, platform } from "tyrus:os";
+
+const main = (): void => {
+    console.log(platform());
+    console.log(cpus().length);
+};

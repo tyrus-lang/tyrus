@@ -1,0 +1,20 @@
+// suffixTreeUkkonen in a 200-iteration loop, with a rebind, unbound temporaries,
+// an empty string, and repeated (sentinel-free) text each iteration.
+import { suffixTreeUkkonen } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let tree = suffixTreeUkkonen("banana");
+        total += tree.getSuffixArray().length;
+        tree = suffixTreeUkkonen("cocoa");
+        total += tree.getSuffixArray().length;
+        total += suffixTreeUkkonen("mississippi").getSuffixArray().length;
+        total += suffixTreeUkkonen("").getSuffixArray().length;
+        total += suffixTreeUkkonen("aaaa").getSuffixArray().length;
+        const bound: usize[] = suffixTreeUkkonen("abracadabra").getSuffixArray();
+        total += bound.length;
+    }
+    console.log(total);
+    console.log("assert:", 7400);
+};

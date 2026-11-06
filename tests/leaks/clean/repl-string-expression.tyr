@@ -1,0 +1,9 @@
+// REPL scenario: auto-printed expression (no semicolon), looped 200x.
+const main = (): void => {
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const x: i32 = i;
+        const y: i32 = i + 1;
+        console.log(x + y);
+        console.log("assert:", i * 2 + 1);
+    }
+};

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# Update every editor integration after changing the compiler, the LSP, the
+# lexicon (`tyrus_core::keywords`), or the tree-sitter grammar.
+#
+# The language intelligence itself is served by `tyrus lsp` (build it with
+# `scripts/tyrus`). This script only refreshes the per-editor artifacts:
+#   1. regenerates the generated highlight artifacts from the lexicon (xtask)
+#      and verifies they are in sync (xtask --check);
+#   2. regenerates the tree-sitter parser from grammar.js and validates it
+#      against its in-repository grammar corpus (scripts/tree-sitter);
+#   3. builds and installs the VS Code extension (scripts/code);
+#   4. the other editors load their files directly from this repo, just reload.
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+echo "==> Regenerating editor artifacts from the compiler lexicon"
+(cd "${project_dir}" && cargo run --quiet -p xtask)
+
+echo "==> Verifying the generated artifacts are in sync with the lexicon"
+(cd "${project_dir}" && cargo run --quiet -p xtask -- --check)
+
+echo "==> Syncing the TextMate grammar into the Playground"
+cp "${project_dir}/editors/vscode/syntaxes/tyrus.tmLanguage.json" \
+   "${project_dir}/playground/frontend/public/grammars/tyrus.tmLanguage.json"
+
+echo "==> Regenerating and validating the tree-sitter grammar"
+"${project_dir}/scripts/tree-sitter"
+
+if command -v "${CODE_BIN:-code}" >/dev/null 2>&1; then
+    echo "==> Building and installing the VS Code extension"
+    "${project_dir}/scripts/code"
+else
+    echo "==> Skipping VS Code (the '${CODE_BIN:-code}' CLI was not found)"
+fi
+
+cat <<'EOF'
+==> Kate, Neovim, Zed and WebStorm integration:
+    Kate    : run "bash editors/kate/install.sh" to copy the regenerated XML, then restart Kate.
+    Neovim  : reopen a .tyr buffer (:e) to pick up the regenerated syntax/tyrus.vim.
+    Zed     : run "zed: reload extensions" (the dev extension reads editors/zed).
+    WebStorm: restart the tyrus server in LSP4IJ, or reopen the .tyr file.
+
+The compiler and language server are updated separately by scripts/tyrus.
+EOF

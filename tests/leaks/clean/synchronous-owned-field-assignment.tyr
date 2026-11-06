@@ -1,0 +1,10 @@
+interface Record {
+    label: string;
+}
+
+function main(): void {
+    let row: Record = { label: "edge" };
+    row.label = "written";
+    console.log(row.label);
+    console.log("assert:", "written");
+}

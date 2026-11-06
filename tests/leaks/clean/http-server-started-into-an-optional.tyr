@@ -1,0 +1,29 @@
+// A listen result widened into HttpServer? must release its native handle once.
+import { createRouter, HttpError, HttpReply, HttpRouter, HttpServer, HttpStatus, ServerOptions, TextBody } from "tyrus:http";
+import { sleepAsync } from "tyrus:task";
+
+const main = async (): Promise<void> => {
+    let served: i32 = 0;
+    for (let index: i32 = 0; index < 20; index += 1) {
+        const app: HttpRouter = createRouter();
+        app.get("/", {
+            response: { 200: TextBody },
+            handler: (request, reply): void => {
+                reply.status(HttpStatus.Ok).send("ok");
+            },
+        });
+        let server: HttpServer?;
+        const started = app.listen(0, { host: "127.0.0.1" }) onfail {
+            printError(`start failed: ${started.code}`);
+            return;
+        };
+        server = started;
+        await sleepAsync(1);
+        if (server) {
+            await server.close();
+            served += 1;
+        }
+    }
+    print(served);
+    print("assert:", 20);
+};

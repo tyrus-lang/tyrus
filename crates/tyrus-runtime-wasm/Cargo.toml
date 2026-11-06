@@ -1,0 +1,39 @@
+[package]
+name = "tyrus-runtime-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WASM-compatible runtime services for Tyrus playground execution."
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[features]
+# Declared but never enabled: see the note in tyrus-runtime's Cargo.toml.
+os-entropy = []
+
+[dependencies]
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
+percent-encoding.workspace = true
+tyrus-validators = { path = "../tyrus-validators" }
+tyrus-decimal = { path = "../tyrus-decimal" }
+# `encoding` is shared source whose codec rules live in this pure crate.
+tyrus-encoding = { path = "../tyrus-encoding" }
+# The shared modules speak the same `string` representation as the native
+# runtime: a buffer pointer beside its lengths, not a NUL-terminated `char*`.
+tyrus-string = { path = "../tyrus-string" }
+dlmalloc = { version = "0.2", features = ["global"] }
+# Required by the modules shared verbatim with `tyrus-runtime`: `strings` needs
+# `regex`, and `decimal` needs `libc` for the `c_int` in its ABI.
+regex.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+# `temporal` is shared source; jiff bundles its own tzdb, so timezone lookup
+# works in the sandbox with no host help. Only the clock needs an import.
+jiff.workspace = true
+tyrus-temporal-data = { path = "../tyrus-temporal-data" }
+
+[lints]
+workspace = true

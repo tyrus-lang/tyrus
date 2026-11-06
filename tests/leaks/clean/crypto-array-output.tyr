@@ -1,0 +1,50 @@
+// Found running the complete examples aggregator under valgrind: every
+// `tyrus:crypto` call returning a fresh `u8[]` (`hmac.*`,
+// `digest.*`, `rand.randomBytes`, `cipher.aes.encrypt`,
+// `cipher.aes.decryptBytes`, a `DigestStream`'s own `.digest()`) already had
+// registration code for its return value, but a second, independent bug hid
+// behind it: `emit_async_cleanup_source_expression`'s `Type::Array(element)
+// if element.is_copy()` arm only actually freed the buffer when
+// `async_owned_copy_array_expression` recognized the *source expression's
+// syntactic shape*, and a `tyrus:crypto` namespace method call
+// (`hmac.sha256(...)`) is not one of the shapes it knows. Whenever a
+// `VarDecl`'s initializer ALSO contained another, unrelated pending
+// allocation, an allocating argument, such as `utf8.encode("key")` passed
+// alongside the receiver, `has_nested_owned_native_results` took this as
+// "clone and release the source", called `forget_owned_native_result` on the
+// crypto call's own already-registered result (removing it from tracking),
+// and then found no shape it recognized to actually free it: silently
+// forgotten, not freed, leaking every time. A crypto call with no such
+// co-occurring allocation (e.g. two named `u8[]` locals passed as plain
+// arguments) was unaffected, this only reproduces with an allocating
+// argument in the same call. Closed by freeing the buffer whenever
+// `removed_direct` (the identity-based forget just above) succeeded at all,
+// regardless of whether the shape predicate also recognizes it, if the
+// value's own construction was already known-owned by direct SSA identity,
+// nothing else needs to vouch for its shape.
+//
+// Expected output is 192.
+import { CryptoError, hmac, digest } from "tyrus:crypto";
+
+function cryptoBytes(result: Result<u8[], CryptoError>): u8[] {
+    match (result) {
+        Ok(value) => { return value; }
+        Err(error) => { printError(error.code); return []; }
+    }
+}
+
+import { utf8 } from "tyrus:encoding";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 3; i += 1) {
+        const binary: u8[] = [0, 1, 0, 255];
+        const mac: u8[] = cryptoBytes(hmac.sha256(binary, utf8.encode("key")));
+        total += mac.length;
+
+        const hashed: u8[] = cryptoBytes(digest.sha256(utf8.encode("payload")));
+        total += hashed.length;
+    }
+    console.log(total);
+    console.log("assert:", 192);
+};

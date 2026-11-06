@@ -1,0 +1,33 @@
+# The REPL tests drive a real pseudo-terminal and wait on what the process
+# writes back, so they are timing-sensitive in a way no other test here is.
+#
+# `cargo test` runs one test binary at a time, which left them most of the
+# machine by accident. `cargo nextest` schedules every test in the workspace in
+# a single pool (which is what makes it worth using) and under that load the
+# PTY tests stopped reaching their prompt inside the two-second kill timeout:
+# twelve failed at once in the first run, and three in the next, each burning
+# the full 20-second wait. Every one of them passes in isolation in under
+# 0.2 seconds, so what fails is the scheduling, not the REPL.
+#
+# Two settings, because the first attempt fixed the wrong half. `max-threads`
+# stops these tests from running against *each other*, which was not the
+# problem: they kept timing out while the rest of the suite saturated the
+# machine around them. `threads-required` is what addresses that, nextest
+# reserves the whole thread budget for one of these at a time, so nothing else
+# is scheduled alongside. They run alone, which is the condition they were
+# written under and which their 20-second prompt timeout assumes.
+#
+# The cost is small: the whole PTY binary is about forty tests of a fifth of a
+# second each when the machine is not fighting them.
+[test-groups]
+repl-pty = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(repl)'
+test-group = 'repl-pty'
+threads-required = 'num-test-threads'
+
+# The same tests are also the slowest in the suite when they do run, so the
+# default 60-second slow warning would fire on a healthy run and train the eye
+# to ignore it.
+slow-timeout = { period = "30s", terminate-after = 4 }

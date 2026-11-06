@@ -1,0 +1,14 @@
+import { watch, mkdir, rm, type RmOptions, type FsError } from "tyrus:fs";
+
+const main = (): void => {
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const dir = "./__watch_leak_tmp__";
+        const opts: RmOptions = { force: true, recursive: true };
+        try {
+            mkdir(dir);
+            const watcher = watch(dir);
+            watcher.close();
+            rm(dir, opts);
+        } catch (e: FsError) {}
+    }
+};

@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+#
+# Runs the `.tyr` leak corpus.
+#
+# `tests/leaks/clean/` holds the categories that have been fixed: each must
+# report zero bytes leaked, so a regression fails here rather than silently
+# returning. A leak that grows with the iteration count is memory exhaustion
+# for a long-running program, and it is invisible without a check like this
+# one.
+#
+# `tests/leaks/known/` holds the categories still open. Those must *keep*
+# leaking: when one stops, the run fails asking for the file to be moved to
+# `clean/`, so a fix is never merged without locking it in. `known/` becoming
+# empty is the definition of done.
+#
+# Two backends measure the same corpus:
+#
+#   valgrind (default)  Most precise, and the slowest by a wide margin.
+#   --fast              AddressSanitizer + LeakSanitizer, linked into each
+#                       case binary. Far cheaper, which is what makes it
+#                       usable after every change instead of once at the end.
+#
+# Use `--fast` while iterating and the default before milestones, releases and
+# any broad refactor of ownership, runtime or FFI. They do not detect exactly
+# the same things: memcheck is stricter about reads of uninitialized memory,
+# while ASan is stricter about buffer overflows and use-after-free. Neither is
+# a superset of the other, so the slow one stays the gate.
+#
+# Two groups of cases are split out of the default run because their cost is
+# unrelated to what a given change touches:
+#
+#   fs-*    `scripts/leak-check-fs`. Filesystem cases spend their time in
+#           syscalls, where valgrind's overhead is far worse than on ordinary
+#           compute, `fs-glob-search-diff` alone ran for over 18 minutes in a
+#           measured run, more than every non-fs case put together. Run it when
+#           `tyrus:fs` or the ownership of native string/array results changes.
+#   repl/jit `scripts/leak-check-repl`/`scripts/leak-check-jit`, ~9 minutes
+#           each. Run them when `src/repl/repl.rs`/`src/compile/compile.rs` change.
+#
+# `scripts/validate` runs all four, so the full gate still covers everything.
+#
+# Usage:
+#   scripts/leak-check                   # corpus minus fs, under valgrind
+#   scripts/leak-check --fast            # same, under ASan/LSan
+#   scripts/leak-check --fs-only         # only the filesystem cases
+#   scripts/leak-check clean             # only the categories that must stay fixed
+#   scripts/leak-check --fast clean NAME # one named case, quickest loop
+#
+# A named case always runs, whichever group it belongs to.
+
+set -uo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+backend="valgrind"
+fs_scope="skip"
+positional=()
+for argument in "$@"; do
+    case "${argument}" in
+    --fast) backend="asan" ;;
+    --fs-only) fs_scope="only" ;;
+    # An unknown flag used to fall through to `positional`, land in `scope`,
+    # match no branch, and run zero cases, exiting 0. This script's whole job
+    # is to answer "did memory stay clean?", and a typo made it answer "yes"
+    # without measuring anything. A validation gate that can be skipped by
+    # accident is worse than no gate, because it is trusted.
+    -*)
+        echo "error: unknown flag \`${argument}\`; expected \`--fast\` or \`--fs-only\`." >&2
+        echo "usage: scripts/leak-check [--fast] [--fs-only] [all|clean|known] [CASE_NAME]" >&2
+        exit 2
+        ;;
+    *) positional+=("${argument}") ;;
+    esac
+done
+set -- ${positional[@]+"${positional[@]}"}
+
+if [[ ${backend} == "valgrind" ]] && ! command -v valgrind >/dev/null 2>&1; then
+    echo "valgrind is not installed; skipping the leak corpus." >&2
+    echo "Install it to run this check: apt-get install valgrind, or use --fast." >&2
+    exit 0
+fi
+
+# A target directory of this script's own, mirroring `scripts/sanitizers`.
+# The corpus needs the runtime built with `system-allocator`, a different
+# feature set from an ordinary `cargo build`. Sharing `target/` with the normal
+# build made the two evict each other: every corpus run recompiled the whole
+# workspace and the next ordinary build recompiled it right back. Worse, an
+# ordinary `cargo build` running while the corpus was in flight replaced the
+# compiler underneath it with a mimalloc-linked one, and the run then reported
+# `Invalid free()` for every case, a whole run's results silently invalidated.
+export CARGO_TARGET_DIR="${project_dir}/target/leak-check"
+compiler="${CARGO_TARGET_DIR}/debug/tyrus"
+
+# Always rebuild, and always with `system-allocator`: neither valgrind nor
+# LeakSanitizer can see through mimalloc's own arena, so a corpus run against a
+# mimalloc-linked runtime reports invalid frees for every release and hides
+# real leaks behind that noise.
+echo "==> Building the compiler (system allocator, for a tool-visible heap)"
+cargo build --quiet --package tyrus --package tyrus-runtime \
+    --features tyrus-runtime/system-allocator || exit 1
+
+# `tyrus build` links the generated binary with `-fsanitize=address` when this
+# is set (see `configure_sanitizer_linking`), which is all the fast backend
+# needs: leak detection comes from ASan's allocator interposition, so the
+# runtime staticlib does not have to be instrumented as well.
+if [[ ${backend} == "asan" ]]; then
+    export TYRUS_LINK_ADDRESS_SANITIZER=1
+fi
+
+workspace="$(mktemp -d)"
+trap 'rm -rf "${workspace}"' EXIT
+
+started_at="${SECONDS}"
+skipped_fs=0
+
+# Bytes definitely lost by one program, or `build-failed`.
+measure() {
+    local source="$1"
+    local name="$2"
+    local root="${workspace}/${name}"
+    rm -rf "${root}"
+    mkdir -p "${root}/src"
+    printf '{ "project": { "name": "leak-case", "version": "0.1.0" } }\n' >"${root}/tyrus.json"
+    cp "${source}" "${root}/src/main.tyr"
+    if ! (cd "${root}" && "${compiler}" build >/dev/null 2>build.stderr); then
+        sed 's/^/        /' "${root}/build.stderr" >&2
+        echo "build-failed"
+        return
+    fi
+    # A case that stops behaving is not a case that leaks less. The `catch` in
+    # `throw-across-scope` once silently stopped catching, and every byte count
+    # here stayed green because nothing read the output. Cases print their
+    # results in `value` / `assert: expected` pairs; any mismatch fails.
+    # `detect_stack_use_after_return` is on because the class of bug it catches
+    # is the one this corpus is structurally blind to. Memory spent on the stack
+    # is never leaked memory, so a value wrongly placed there, the exact hazard
+    # any "this does not escape, put it on the stack" optimization creates,
+    # passes every byte count here while corrupting whatever reuses the frame.
+    # The generated code is instrumented, not merely linked against the runtime,
+    # so the check applies to what the compiler emits and not only to the
+    # runtime it calls.
+    local stdout
+    stdout="$(cd "${root}" &&
+        ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=1 ./target/leak-case 2>/dev/null)"
+    if ! printf '%s\n' "${stdout}" | awk '
+        /^assert: / { if ($0 != "assert: " previous) { exit 1 } }
+        { previous = $0 }
+    '; then
+        echo "wrong-output"
+        return
+    fi
+
+    local report
+    if [[ ${backend} == "asan" ]]; then
+        report="$(cd "${root}" &&
+            ASAN_OPTIONS=detect_leaks=1:exitcode=0:detect_stack_use_after_return=1 \
+                ./target/leak-case 2>&1 >/dev/null)"
+    else
+        report="$(cd "${root}" &&
+            valgrind --leak-check=summary --error-exitcode=0 ./target/leak-case 2>&1 >/dev/null)"
+    fi
+
+    # Corruption outranks any byte count. Freeing twice is worse than leaking,
+    # so a case that frees something it does not own fails here whatever its
+    # leak figure, including a case in `known/`, which is allowed to leak but
+    # never allowed to corrupt.
+    if [[ ${backend} == "asan" ]]; then
+        if printf '%s\n' "${report}" |
+            grep -qE 'heap-use-after-free|double-free|heap-buffer-overflow|stack-buffer-overflow|attempting free on address which was not malloc|alloc-dealloc-mismatch'; then
+            echo "corrupt"
+            return
+        fi
+        # LSan's "Direct leak" is the counterpart of valgrind's "definitely
+        # lost": both exclude blocks reachable only from another leaked block,
+        # so the two backends report the same number for the same case.
+        local lost
+        lost="$(printf '%s\n' "${report}" |
+            grep -oE 'Direct leak of [0-9]+ byte' |
+            grep -oE '[0-9]+' |
+            awk '{ total += $1 } END { print total + 0 }')"
+        printf '%s' "${lost:-0}"
+        return
+    fi
+
+    if printf '%s\n' "${report}" |
+        grep -qE 'Invalid free|Invalid read|Invalid write|mismatched'; then
+        echo "corrupt"
+        return
+    fi
+    # With nothing outstanding valgrind prints "no leaks are possible" and omits
+    # the summary entirely, so a missing line means zero rather than unknown.
+    local lost
+    lost="$(printf '%s\n' "${report}" |
+        grep 'definitely lost:' |
+        sed 's/.*definitely lost: //; s/ bytes.*//; s/,//g')"
+    printf '%s' "${lost:-0}"
+}
+
+scope="${1:-all}"
+filter="${2:-}"
+failures=()
+
+# Same reasoning as the unknown-flag branch above: a misspelled scope or case
+# name is an error, not an empty run that reports success.
+case "${scope}" in
+all | clean | known) ;;
+*)
+    echo "error: unknown scope \`${scope}\`; expected \`all\`, \`clean\` or \`known\`." >&2
+    echo "usage: scripts/leak-check [--fast] [--fs-only] [all|clean|known] [CASE_NAME]" >&2
+    exit 2
+    ;;
+esac
+
+if [[ -n ${filter} ]]; then
+    matches=0
+    for candidate in tests/leaks/clean/*.tyr tests/leaks/known/*.tyr; do
+        [[ -e ${candidate} ]] || continue
+        [[ "$(basename "${candidate}" .tyr)" == "${filter}" ]] && matches=1
+    done
+    if [[ ${matches} -eq 0 ]]; then
+        echo "error: no leak case named \`${filter}\` in tests/leaks/{clean,known}/." >&2
+        exit 2
+    fi
+fi
+
+# A named case always runs, whichever group it belongs to; otherwise the
+# filesystem cases are in exactly one of the two runs.
+should_run() {
+    local name="$1"
+    if [[ -n ${filter} ]]; then
+        [[ ${name} == "${filter}" ]]
+        return
+    fi
+    if [[ ${fs_scope} == "only" ]]; then
+        [[ ${name} == fs-* ]]
+        return
+    fi
+    if [[ ${name} == fs-* ]]; then
+        skipped_fs="$((skipped_fs + 1))"
+        return 1
+    fi
+    return 0
+}
+
+report_case() {
+    local name="$1" lost="$2" zero_label="$3" zero_is_failure="$4"
+    if [[ -z ${lost} ]]; then
+        echo "    NO RESULT     ${name}: the worker produced no measurement"
+        failures+=("${name} produced no measurement")
+    elif [[ ${lost} == "build-failed" ]]; then
+        echo "    BUILD FAILED  ${name}"
+        failures+=("${name} (build failed)")
+    elif [[ ${lost} == "corrupt" ]]; then
+        echo "    CORRUPTED     ${name}: invalid free or invalid access"
+        failures+=("${name} corrupted memory")
+    elif [[ ${lost} == "wrong-output" ]]; then
+        echo "    WRONG OUTPUT  ${name}: an assert pair did not match"
+        failures+=("${name} produced wrong output")
+    elif [[ ${lost} == "0" ]]; then
+        echo "    ${zero_label}  ${name}"
+        if [[ ${zero_is_failure} == "yes" ]]; then
+            failures+=("${name} no longer leaks, move it to tests/leaks/clean/")
+        fi
+    elif [[ ${zero_is_failure} == "yes" ]]; then
+        echo "    open          ${name}: ${lost} bytes"
+    else
+        echo "    REGRESSED     ${name}: ${lost} bytes definitely lost"
+        failures+=("${name} leaked ${lost} bytes")
+    fi
+}
+
+# Measuring one case is independent of every other, and each gets its own
+# directory above, so the corpus runs in parallel. Serially it was bound by
+# compiling one `.tyr` program at a time, with the fast backend that compile,
+# not the leak tool, is what the wall clock is made of.
+jobs="${TYRUS_LEAK_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+
+run_one() {
+    local source="$1"
+    local name
+    name="$(basename "${source}" .tyr)"
+    printf '%s\t%s\n' "${name}" "$(measure "${source}" "${name}")"
+}
+export -f measure run_one
+export compiler backend workspace
+
+pending=()
+for source in tests/leaks/clean/*.tyr tests/leaks/known/*.tyr; do
+    [[ -e ${source} ]] || continue
+    name="$(basename "${source}" .tyr)"
+    # The reporting loops below run for `all` and for the matching scope, so the
+    # measuring pass has to agree with them. It did not: `known` was measured
+    # only under `all`, which made `scripts/leak-check known` report every open
+    # case as `NO RESULT`, a scope the usage text advertises that quietly
+    # measured nothing.
+    case "${source}" in
+    tests/leaks/known/*) [[ ${scope} == "all" || ${scope} == "known" ]] || continue ;;
+    *) [[ ${scope} == "all" || ${scope} == "clean" ]] || continue ;;
+    esac
+    should_run "${name}" || continue
+    pending+=("${source}")
+done
+
+declare -A measured=()
+if [[ ${#pending[@]} -gt 0 ]]; then
+    noun="cases"
+    [[ ${#pending[@]} -eq 1 ]] && noun="case"
+    echo "==> Measuring ${#pending[@]} ${noun} with ${jobs} jobs (${backend} backend)"
+    results="${workspace}/results"
+    printf '%s\n' "${pending[@]}" |
+        xargs -P "${jobs}" -I{} bash -c 'run_one "$1"' _ {} >"${results}"
+    while IFS=$'\t' read -r name result; do
+        measured["${name}"]="${result}"
+    done <"${results}"
+fi
+
+# `should_run` already ran once per case above and counted the skips; replaying
+# it in the reporting loops would double that tally.
+skipped_fs_total="${skipped_fs}"
+skipped_fs=0
+
+if [[ ${scope} == "all" || ${scope} == "clean" ]]; then
+    echo "==> Categories that must stay fixed"
+    for source in tests/leaks/clean/*.tyr; do
+        [[ -e ${source} ]] || continue
+        name="$(basename "${source}" .tyr)"
+        should_run "${name}" || continue
+        report_case "${name}" "${measured[${name}]-}" "ok          " "no"
+    done
+fi
+
+if [[ ${scope} == "all" || ${scope} == "known" ]]; then
+    echo "==> Categories still open"
+    for source in tests/leaks/known/*.tyr; do
+        [[ -e ${source} ]] || continue
+        name="$(basename "${source}" .tyr)"
+        should_run "${name}" || continue
+        report_case "${name}" "${measured[${name}]-}" "FIXED       " "yes"
+    done
+fi
+
+elapsed="$((SECONDS - started_at))"
+
+if [[ ${skipped_fs_total} -gt 0 ]]; then
+    echo
+    echo "Skipped ${skipped_fs_total} filesystem cases, run scripts/leak-check-fs for those."
+fi
+
+if [[ ${#failures[@]} -gt 0 ]]; then
+    echo
+    printf 'FAILED (%s backend, %ss):\n' "${backend}" "${elapsed}" >&2
+    printf '  - %s\n' "${failures[@]}" >&2
+    exit 1
+fi
+
+echo
+echo "Leak corpus is as expected (${backend} backend, ${elapsed}s)."

@@ -1,0 +1,35 @@
+// A router created inside an `async` function had no owner at all. `createRouter`
+// boxes an `HttpRouter`, the frame stored the handle in an owned slot, and the
+// frame's drop glue reached the arm that releases nothing: an opaque handle
+// belongs to the runtime and the program gives it up explicitly, the way
+// `server.close()` does. A router has no such call, so nothing ever freed it.
+//
+// Invisible in a synchronous `main` for a reason worth recording: the handle
+// stays in a stack slot that is still live at `exit`, so the pointer is
+// reachable and no detector calls it a leak. An async frame is heap-allocated
+// and freed, which loses the only pointer to the router and turns the same
+// missing release into a reported one.
+import { createRouter, HttpReply, HttpRouter, HttpStatus, TextBody } from "tyrus:http";
+import { sleepAsync } from "tyrus:task";
+
+async function buildRouter(): Promise<i32> {
+    const app: HttpRouter = createRouter();
+    app.get("/", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            reply.status(HttpStatus.Ok).send("ok");
+        },
+    });
+    await sleepAsync(1);
+    return 1;
+}
+
+const main = async (): Promise<void> => {
+    let built: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const one: i32 = await buildRouter();
+        built += one;
+    }
+    console.log(built);
+    console.log("assert:", 200);
+};

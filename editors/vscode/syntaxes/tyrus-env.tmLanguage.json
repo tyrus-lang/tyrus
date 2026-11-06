@@ -1,0 +1,58 @@
+{
+  "name": "tyrus .env",
+  "scopeName": "source.tyr-env",
+  "patterns": [
+    { "include": "#decorator-line" },
+    { "include": "#comment" },
+    { "include": "#assignment" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "^\\s*#.*$",
+      "name": "comment.line.number-sign.tyr-env"
+    },
+    "decorator-line": {
+      "begin": "^\\s*(#\\s*)?(?=@[A-Za-z_])",
+      "beginCaptures": {
+        "1": { "name": "comment.line.number-sign.tyr-env" }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.decorator.tyr" },
+            "2": { "name": "entity.name.function.decorator.tyr" }
+          }
+        },
+        { "include": "#strings" },
+        { "name": "storage.type.tyr", "match": "\\b(?:string|boolean|bool|i32|i64|u32|u64|f32|f64)\\b" },
+        { "name": "constant.numeric.boolean.tyr", "match": "\\b(?:true|false)\\b" },
+        { "name": "constant.numeric.float.tyr", "match": "\\b[0-9]+\\.[0-9]+\\b" },
+        { "name": "constant.numeric.integer.tyr", "match": "\\b[0-9][0-9_]*\\b" }
+      ]
+    },
+    "assignment": {
+      "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(=)?(.*)$",
+      "captures": {
+        "1": { "name": "variable.other.tyr-env" },
+        "2": { "name": "keyword.operator.assignment.tyr" },
+        "3": { "name": "string.unquoted.tyr-env" }
+      }
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.tyr",
+          "begin": "\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+          "end": "\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+          "patterns": [
+            { "name": "constant.character.escape.tyr", "match": "\\\\(?:[\\\\\"nrt0]|u\\{[0-9A-Fa-f]+\\})" }
+          ]
+        }
+      ]
+    }
+  }
+}

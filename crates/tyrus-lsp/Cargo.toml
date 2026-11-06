@@ -1,0 +1,19 @@
+[package]
+name = "tyrus-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Language Server Protocol implementation for Tyrus."
+
+[dependencies]
+tyrus-core = { path = "../tyrus-core" }
+tyrus-fmt = { path = "../tyrus-fmt" }
+tyrus-lint = { path = "../tyrus-lint" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tower = "0.4"
+tower-lsp.workspace = true
+
+[lints]
+workspace = true

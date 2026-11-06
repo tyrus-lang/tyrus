@@ -1,0 +1,75 @@
+// A closure that never leaves the frame that built it keeps its environment in
+// a stack slot: one pointer per capture, aimed at the caller's own slot. That
+// is what makes a write from inside the closure reach the binding outside, and
+// it is also the shape that has no reference count to own. The first wiring of
+// it would have crashed here: the declaration claims a fresh closure by syntax,
+// so scope exit handed a stack address to `tyrus_closure_release`, which
+// decrements whatever the first captured pointer happens to be and then frees a
+// stack address.
+//
+// This file runs the confined shape next to the escaping ones that must keep
+// their heap environment and release it exactly once. Run under
+// `detect_stack_use_after_return=1`: an environment read after its frame died
+// is caught there and nowhere else.
+
+// Escaping by return: the environment outlives this frame, so it is on the heap
+// with a count, and the capture is a copy rather than a pointer.
+function counterFrom(start: i32): () => i32 {
+    const base = start;
+    const read = (): i32 => base;
+    return read;
+}
+
+function run(f: () => i32): i32 {
+    return f();
+}
+
+const main = (): void => {
+    // Confined: only ever called. Stack environment, capture by reference, the
+    // write below is visible outside, which is the whole point.
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const add = (): void => {
+            total = total + i;
+        };
+        add();
+    }
+    console.log(total);
+    console.log("assert:", 124750);
+
+    // Confined and nested: a closure calling another confined closure, both
+    // pointing at the same outer slot.
+    let hits: i32 = 0;
+    const bump = (): void => {
+        hits = hits + 1;
+    };
+    const bumpTwice = (): void => {
+        bump();
+        bump();
+    };
+    for (let i: i32 = 0; i < 500; i += 1) {
+        bumpTwice();
+    }
+    console.log(hits);
+    console.log("assert:", 1000);
+
+    // Escaping by return: heap environment, released exactly once per owner.
+    let sum: i32 = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const read = counterFrom(i);
+        sum = sum + read();
+    }
+    console.log(sum);
+    console.log("assert:", 124750);
+
+    // Escaping by argument: the callee may keep the value, so this one is on
+    // the heap too, and the capture is copied into it.
+    let passed: i32 = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const value = i;
+        const give = (): i32 => value;
+        passed = passed + run(give);
+    }
+    console.log(passed);
+    console.log("assert:", 124750);
+};

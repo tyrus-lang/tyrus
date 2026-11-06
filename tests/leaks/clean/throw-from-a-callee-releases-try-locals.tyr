@@ -1,0 +1,48 @@
+function check(value: i32): i32 throws string {
+    if (value > 1) {
+        throw "too big";
+    }
+    return value;
+}
+
+function helper(value: i32): i32 throws string {
+    const label: string = "helper".toUpperCase();
+    return check(value) + label.length as i32;
+}
+
+const main = (): void => {
+    const checkClosure = (value: i32): i32 throws string => {
+        if (value > 1) {
+            throw "closure too big";
+        }
+        return value;
+    };
+    let total: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        try {
+            const label: string = "label".toUpperCase();
+            const values: i32[] = [1, 2, 3].filter((value: i32): boolean => value > index % 2);
+            total += check(index % 3) + label.length as i32 + values.length as i32;
+        } catch (error: string) {
+            total -= 1;
+        }
+        try {
+            total += helper(index % 3);
+        } catch (error: string) {
+            total -= 1;
+        }
+        try {
+            const label: string = "closure".toUpperCase();
+            try {
+                const inner: string = "inner".toUpperCase();
+                total += checkClosure(index % 3) + inner.length as i32;
+            } catch (error: i32) {
+                total += error;
+            }
+            total += label.length as i32;
+        } catch (error: string) {
+            total -= 1;
+        }
+    }
+    console.log(total);
+};

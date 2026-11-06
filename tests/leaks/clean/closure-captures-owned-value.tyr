@@ -1,0 +1,43 @@
+// A closure that captures an owned value used to store the captured *pointer*
+// in its heap environment, not a copy. The outer scope freed its own binding on
+// exit, and a closure that outlived that scope was left reading freed memory,
+// a use-after-free that returned garbage, not merely a leak.
+//
+// The environment now clones each owned capture, exactly as the async closure
+// path already did, and a generated destructor releases the clones when the
+// closure is dropped. The outer binding and the clone are then two separate
+// allocations, each freed once: no overlap to double-free, no dangling pointer
+// to read.
+//
+// This covers the shape that is fully closed: a closure bound at its literal
+// site, whose drop runs at scope exit. A closure that escapes by *return* is a
+// separate matter, its clone is correct, so the use-after-free is gone, but the
+// closure struct carries no way for the caller to reach the destructor, so the
+// environment leaks. That is tracked in `known/closure-escapes-by-return`.
+//
+// A captured owned value is *moved* into the closure, the borrow checker
+// invalidates the source, so each owned value is captured exactly once. The
+// second closure below captures its own value alongside a `Copy` one, which is
+// stored shallow and never released.
+//
+// Expected output is 1400.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const first: string = "ab".toUpperCase();
+        const second: string = "cd".toUpperCase();
+        const constant: usize = 3;
+
+        const withOwned = (): usize => {
+            return first.length;
+        };
+        const withBoth = (): usize => {
+            return second.length + constant;
+        };
+
+        total += withOwned();
+        total += withBoth();
+    }
+    console.log(total);
+    console.log("assert:", 1400);
+};

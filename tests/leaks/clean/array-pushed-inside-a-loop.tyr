@@ -1,0 +1,36 @@
+// An array declared and grown inside a loop body used to crash the program at
+// around two hundred thousand iterations, with a SIGSEGV inside the allocator
+// and a backtrace naming neither the loop nor the cause.
+//
+// Two defects, found together. The first: an empty array literal asked for
+// `malloc(0)`, whose result is implementation-defined, mimalloc returns a
+// shared sentinel, so `[]` inside a loop produced the same pointer every time
+// and the first `push` reallocated it out from under the next iteration. A
+// null pointer is the honest empty buffer, since `realloc(NULL, n)` is defined
+// to be `malloc(n)`. Fixing it with a `select` was not enough: that still
+// *calls* `malloc(0)` and drops the result, which AddressSanitizer reported as
+// one leaked byte per iteration. It takes a branch.
+//
+// The second, and the one that actually crashed: three `alloca` instructions
+// were emitted inside the loop body, the binding's slot and two element
+// slots, about thirty-two bytes an iteration. An `alloca` is a stack
+// allocation when it *runs*, and the stack is not given back until the
+// function returns, so two hundred thousand iterations overflowed the eight
+// megabytes a thread gets. The threshold matched the arithmetic exactly.
+//
+// This case is in `clean/` rather than `known/` because it was never a leak:
+// the corpus said so, correctly, while the program was still crashing. Memory
+// spent on the stack is not leaked memory, which is precisely why a leak
+// corpus cannot be the only gate on allocation changes.
+//
+// Expected output is 19999900000.
+const main = (): void => {
+    let total: i64 = 0;
+    for (let i: i32 = 0; i < 200000; i += 1) {
+        let growing: i32[] = [];
+        growing.push(i);
+        growing.push(i + 1);
+        total += growing[0] as i64;
+    }
+    console.log(total);
+};

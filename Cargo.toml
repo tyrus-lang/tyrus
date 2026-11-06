@@ -1,0 +1,200 @@
+[package]
+name = "tyrus"
+version.workspace = true
+edition.workspace = true
+description = "Tyrus, TypeScript syntax, Rust semantics. A programming language made for devs."
+authors = ["Tyrus contributors"]
+license.workspace = true
+repository.workspace = true
+include = [
+    "/.cargo/config.toml.example",
+    "/Cargo.lock",
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/TYRUS-FMT.md",
+    "/TYRUS-LINT.md",
+    "/src/**",
+]
+
+[workspace]
+members = [
+    ".",
+    "crates/tyrus-codegen",
+    "crates/tyrus-core",
+    "crates/tyrus-decimal",
+    "crates/tyrus-encoding",
+    "crates/tyrus-fmt",
+    "crates/tyrus-lint",
+    "crates/tyrus-lsp",
+    "crates/tyrus-runtime",
+    "crates/tyrus-runtime-wasm",
+    "crates/tyrus-string",
+    "crates/tyrus-temporal-data",
+    "crates/tyrus-validators",
+    "xtask",
+]
+# The Zed extension is a separate WASM crate (targets wasm32, depends on
+# zed_extension_api); it is not part of this workspace.
+exclude = ["editors/zed", "fuzz"]
+resolver = "2"
+
+[workspace.lints.clippy]
+too_many_lines = "warn"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/tyrus-lang/tyrus"
+
+[workspace.dependencies]
+anstyle = "1"
+age = "0.12"
+arboard = { version = "3", default-features = false }
+bytesize = "2"
+cap-std = "4"
+crc32fast = "1"
+crossterm = "0.29"
+dark-light = "3"
+jiff = "0.2"
+directories = "6"
+figlet-rs = "1"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+fontdb = "0"
+hostname = "0.4"
+if-addrs = "0.10"
+inquire = "0.9"
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm23-1"] }
+libc = "0.2"
+tar = { version = "0.4", default-features = false }
+logos = "0.16"
+mimalloc = { version = "0.1", features = ["override"] }
+notify-rust = "4"
+open = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+rustc-hash = "2"
+regex = "1"
+unicode-normalization = "0.1"
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+unicode-segmentation = "1"
+percent-encoding = "2"
+httpdate = "1"
+sha2 = "0.11"
+tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "process", "rt-multi-thread", "sync"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite", "any", "postgres", "mysql", "tls-rustls-aws-lc-rs"] }
+mongodb = { version = "3.9.1", default-features = false, features = ["dns-resolver", "rustls-tls-aws-lc", "compat-3-0-0"] }
+axum = { version = "0.8.9", features = ["ws"] }
+# The WebSocket client. The server side is axum's own `ws` feature, which uses
+# this same crate, so both ends speak one implementation.
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
+# Certificate verification for `wss://`, the same verifier `fetch` uses through reqwest.
+rustls-platform-verifier = "0.7"
+hyper = { version = "1.10", features = ["http1", "http2", "server"] }
+hyper-util = { version = "0.1.20", features = ["server", "server-auto", "server-graceful", "tokio"] }
+# Only for `LengthLimitError`: telling an over-limit body apart from a
+# malformed one decides between answering 413 and 400.
+http-body-util = "0.1.4"
+http-body = "1.1.0"
+# The multipart parser, which is the one axum itself uses. Boundary handling,
+# header folding and quoted filenames are where a hand-written one goes wrong,
+# and the same rule that keeps the HTTP/1 parser out of this repository keeps
+# this one out too.
+multer = "3"
+brotli = "8"
+tower-lsp = "0.20"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.7", features = ["cors", "set-header"] }
+zeroize = "1"
+argon2 = "0.5"
+jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
+md-5 = "0.11"
+hmac = "0.13"
+rand = "0.10"
+uuid = { version = "1", features = ["v4", "v7"] }
+ulid = "2"
+subtle = "2"
+getrandom = "0.4"
+aes-gcm = "0.11"
+futures-util = "0.3"
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
+rmcp = { version = "=3.5.1", default-features = false, features = ["server", "macros", "schemars", "transport-io"] }
+schemars = "1"
+rustls = "0.23"
+# Local HTTPS for development: the certificate authority and the `localhost`
+# certificate `"development": { "https": true }` serves with. The same crypto
+# backend `rustls` already uses, so the binary carries one.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "aws_lc_rs"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs"] }
+starship-battery = "0.10"
+sys-locale = "0.3"
+sysinfo = "0.30"
+trash = "5"
+uom = "0.37"
+whoami = "1"
+
+[[bin]]
+name = "tyrus"
+path = "src/main.rs"
+
+[dependencies]
+tyrus-codegen = { path = "crates/tyrus-codegen" }
+tyrus-core = { path = "crates/tyrus-core" }
+tyrus-fmt = { path = "crates/tyrus-fmt" }
+tyrus-lint = { path = "crates/tyrus-lint" }
+tyrus-lsp = { path = "crates/tyrus-lsp" }
+tyrus-runtime = { path = "crates/tyrus-runtime" }
+sqlx.workspace = true
+mongodb.workspace = true
+tokio = { workspace = true, features = ["signal"] }
+age.workspace = true
+directories.workspace = true
+jiff.workspace = true
+reqwest.workspace = true
+figlet-rs.workspace = true
+inquire.workspace = true
+crossterm = "0.29"
+# `tyrus watch`. The same version and features the runtime's `FSWatcher` uses,
+# so the two share one build of the crate.
+notify = { version = "8", default-features = false, features = ["crossbeam-channel"] }
+libc.workspace = true
+reedline = "0.50"
+nu-ansi-term = "0.50"
+serde_json.workspace = true
+serde.workspace = true
+rmcp.workspace = true
+schemars.workspace = true
+sha2.workspace = true
+tempfile = "3"
+zeroize.workspace = true
+unicode-normalization.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Threading"] }
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"
+
+[dev-dependencies]
+# `tests/http_fetch_decompression.rs` serves bodies it compressed itself.
+flate2.workspace = true
+# The HTTPS tests need a client that speaks TLS. The synchronous `rustls`
+# connection is what the rest of those tests already look like: a `TcpStream`
+# and a couple of writes.
+rustls.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+rexpect = "0.7"
+
+[build-dependencies]
+tyrus-runtime = { path = "crates/tyrus-runtime" }
+
+[profile.release]
+opt-level = 3
+
+[lints]
+workspace = true

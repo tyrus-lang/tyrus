@@ -1,0 +1,5 @@
+const main = (): void => {
+    const label: string = "first";
+    const label: string = "second";
+    console.log(label);
+};

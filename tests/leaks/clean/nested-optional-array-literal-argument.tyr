@@ -1,0 +1,23 @@
+// A literal of arrays of `T?` allocates a box per element through
+// `emit_optional_box`, which deliberately registers no release of its own. The
+// only thing that ever frees those boxes is the outer array's type-driven drop
+// glue, which walks the element type and finds them.
+//
+// This is the counter-example to the shape in
+// `object-with-optional-fields-into-array-literal`: there an element owned less
+// than its type described because a live binding owned the rest, here it owns
+// less because the inner parts were never registered at all. The two look
+// identical to any test that only asks whether an element carries a full
+// ownership plan, and a fix that stopped claiming such elements deeply leaked
+// exactly these boxes, 16 bytes per iteration, while the corrupting case went
+// quiet. The case is here so the next attempt has to answer both.
+import { floydWarshall } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const distances = floydWarshall([[0, 4], [1, 0]]);
+        total += distances.length;
+    }
+    console.log(total);
+};

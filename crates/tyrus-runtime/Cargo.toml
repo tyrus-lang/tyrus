@@ -1,0 +1,139 @@
+[package]
+name = "tyrus-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Native runtime services for Tyrus programs."
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = ["os-entropy"]
+# Randomness backed by the operating system. The WASM runtime reuses this
+# crate's pure modules but has no entropy source, so it compiles them with the
+# feature off and gets the deterministic fallback instead.
+os-entropy = []
+fuzzing = []
+benchmarking = []
+# Additive opt-out from the mimalloc global allocator, so a top-level `cargo build
+# --features tyrus-runtime/system-allocator` can reach it without fighting default-feature
+# resolution through the `tyrus` -> `tyrus-runtime` edge. Used by `scripts/leak-check*`: valgrind
+# cannot see through mimalloc's own arena. See `src/lib.rs` for the full explanation.
+system-allocator = []
+
+[build-dependencies]
+cc = "1"
+
+[dependencies]
+tyrus-temporal-data = { path = "../tyrus-temporal-data" }
+tyrus-decimal = { path = "../tyrus-decimal" }
+tyrus-encoding = { path = "../tyrus-encoding" }
+age.workspace = true
+arboard.workspace = true
+axum.workspace = true
+tokio-tungstenite.workspace = true
+rustls-platform-verifier.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+tower.workspace = true
+http-body-util.workspace = true
+http-body.workspace = true
+multer.workspace = true
+brotli.workspace = true
+cap-std.workspace = true
+crc32fast.workspace = true
+crossterm.workspace = true
+jiff.workspace = true
+dark-light.workspace = true
+directories.workspace = true
+figlet-rs.workspace = true
+flate2.workspace = true
+fontdb.workspace = true
+hostname.workspace = true
+if-addrs.workspace = true
+inquire.workspace = true
+libc.workspace = true
+tar.workspace = true
+mimalloc.workspace = true
+notify-rust.workspace = true
+open.workspace = true
+regex.workspace = true
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
+zip.workspace = true
+percent-encoding.workspace = true
+httpdate.workspace = true
+tyrus-string = { path = "../tyrus-string" }
+tyrus-validators = { path = "../tyrus-validators" }
+serde_json.workspace = true
+sqlx.workspace = true
+mongodb.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "process", "signal", "sync", "time"] }
+tempfile = "3"
+tower-http.workspace = true
+zeroize.workspace = true
+argon2.workspace = true
+jsonwebtoken.workspace = true
+md-5.workspace = true
+hmac.workspace = true
+rand.workspace = true
+uuid.workspace = true
+ulid.workspace = true
+subtle.workspace = true
+getrandom.workspace = true
+aes-gcm.workspace = true
+futures-util.workspace = true
+reqwest.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+starship-battery.workspace = true
+sys-locale.workspace = true
+sysinfo.workspace = true
+trash.workspace = true
+uom.workspace = true
+whoami.workspace = true
+notify = { version = "8", default-features = false, features = ["crossbeam-channel"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Power", "Win32_System_Threading"] }
+
+[dev-dependencies]
+criterion = "0.8.2"
+tower.workspace = true
+
+[[bench]]
+name = "crypto"
+harness = false
+required-features = ["benchmarking"]
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "crypto_allocations"
+harness = false
+required-features = ["benchmarking"]
+
+[[bench]]
+name = "crypto_timing"
+harness = false
+required-features = ["benchmarking"]
+
+[[bench]]
+name = "crypto_scalability"
+harness = false
+required-features = ["benchmarking"]
+
+[[bench]]
+name = "array_utils"
+harness = false
+required-features = ["benchmarking"]
+
+[[bench]]
+name = "decimal"
+harness = false
+required-features = ["benchmarking"]

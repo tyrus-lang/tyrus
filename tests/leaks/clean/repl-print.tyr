@@ -1,0 +1,7 @@
+// REPL scenario: console.log + multi-line string, looped 200x.
+const main = (): void => {
+    for (let i: i32 = 0; i < 200; i += 1) {
+        console.log("hello");
+        console.log("assert:", "hello");
+    }
+};

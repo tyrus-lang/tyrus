@@ -1,0 +1,4 @@
+// Snippet G: Runtime infinite loop, must timeout in Web Worker (3s)
+const main = (): void => {
+    while (true) { }
+}

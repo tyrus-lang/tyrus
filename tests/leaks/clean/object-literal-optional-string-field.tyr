@@ -1,0 +1,77 @@
+// A `T?` field coerced from a bare value, a literal, a numeric cast,
+// anything whose own type is not already `Optional`, passes through
+// `emit_optional_box`, which never registers its own release (the same
+// gate `VarDecl` already needed for `let x: T? = value;`: some callers use
+// the box *inside* a branch a caller later merges into a phi, so
+// registering release *inside* the boxing helper broke IR snapshot tests
+// twice). Two separate call sites build an object's fields and neither had
+// `VarDecl`'s equivalent registration of its own:
+//
+// - `emit_object_literal_fields` (a plain `{ ... }` literal) never claimed
+//   the box, so every literal providing a value for an optional field
+//   leaked it, one pointer-sized allocation per field, per construction,
+//   whether the field name reached it directly, through shorthand, or the
+//   object's other fields were borrowed or owned. Closed by registering the
+//   box (`ReleasePlan::Value`) right after `emit_expr_as` returns, the same
+//   dominance-safe point `VarDecl` uses, and letting the existing
+//   `take_owned_native_result` call just below fold it into the object's
+//   own `Fields` release plan exactly like any other claimed field.
+// - `emit_object_update` (`{ ...base, field: value }`) has no `Fields` plan
+//   of its own to fold into, the base's own un-overridden fields are
+//   aliased from it, not owned by the result, so walking all of them here
+//   would double-free whatever the base itself already owns, but it
+//   *does* need the same registration, because nothing else ever performs
+//   it for an update either. Registering the box as pending is enough on
+//   its own: the general "does this value have a nested pending result"
+//   fallback the caller already runs for any aggregate (`VarDecl`'s
+//   `has_nested_owned_native_results`, or `Assign`'s equivalent) picks it
+//   up from there, the same fallback that already correctly claims a
+//   directly-allocating override such as `{ ...user, name:
+//   "x".toUpperCase() }` today, with no changes needed for that shape.
+//
+// Both gated identically: not `null`, the source's own type is not already
+// `Optional` (an existing `T?` binding or an `Optional`-returning call
+// already registers itself), and nothing else is pending (a call that
+// itself allocates and separately registers, like `.toUpperCase()` boxed
+// into `string?`, is left to the mechanism that already handles that shape
+// correctly).
+interface Widget {
+    name: string;
+    priority?: i32;
+    active?: boolean;
+    label?: string;
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        // Every optional field given a literal value, one field borrowed
+        // (`name`, via shorthand) rather than freshly allocated.
+        const name: string = "Neo";
+        const priority: i32 = 5;
+        const w: Widget = { name, priority, active: true, label: "value" };
+        total += w.name.length + (w.label ?? "").length;
+
+        // Every optional field omitted: the pre-existing `emit_zero` path,
+        // unaffected by this fix, must stay leak-free too.
+        const bare: Widget = { name: "Ada" };
+        total += (bare.priority ?? 0) as usize;
+
+        // An optional field boxing an already-allocating expression, the
+        // shape the "nothing else pending" gate declines, deferring to the
+        // mechanism that already claims the inner allocation correctly.
+        const computed: Widget = { name: "Grace", label: "value".toUpperCase() };
+        total += (computed.label ?? "").length;
+
+        // The `emit_object_update` (spread) sibling of the same fix: an
+        // optional field given a literal value through a spread update.
+        const updated: Widget = { ...bare, label: "value" };
+        total += (updated.label ?? "").length;
+
+        // ...and its own "already allocating" shape, confirming the
+        // pre-existing general fallback still covers it unchanged.
+        const updatedComputed: Widget = { ...bare, label: "value".toUpperCase() };
+        total += (updatedComputed.label ?? "").length;
+    }
+    console.log(total);
+};

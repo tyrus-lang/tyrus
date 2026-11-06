@@ -1,0 +1,37 @@
+// `${x:.Nf}`/`${x:0Nd}` delegate to dedicated runtime formatters
+// (`tyrus_format_f64_precision`, `tyrus_format_i128_padded`) instead of the
+// plain per-value rendering every other interpolation uses, each of those
+// allocates its own one-use buffer purely to feed `%s`, freed right after
+// the final `snprintf` copies it into the template's own buffer. Neither
+// that intermediate buffer nor the template's own result was ever released
+// before: `emit_template_literal` spliced every interpolated value with
+// `%s` and returned the final buffer without registering it as owned, so
+// nothing claimed it at the binding, and no interpolated value's own
+// one-use rendering buffer (float, integer, `char`, and now a format
+// specifier's) was ever freed either, every numeric/`char` interpolation
+// leaked, format specifier or not. Closed by tracking which of a part's
+// rendered values were fresh allocations (a plain string interpolation
+// aliases the source's own memory and a `boolean` renders from a static
+// constant, so neither is freed) and registering the template's own result
+// the same way an allocating string method claims itself.
+function parseStatus(): [i32, string] {
+    return [200, "ok"];
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const pi: f64 = 3.141592;
+        const id: i32 = 42;
+        const bound = `Valor: ${pi:.2f} | Codigo: ${id:04d}`;
+        total += bound.length;
+
+        // An unbound temporary, never assigned to a name.
+        console.log(`unbound: ${pi:.1f} ${id:02d}`);
+
+        // Nested inside another allocating expression's argument.
+        const [code, message] = parseStatus();
+        console.log(`status ${code:04d}: ${message}`);
+    }
+    console.log(total);
+};

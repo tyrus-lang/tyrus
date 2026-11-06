@@ -1,0 +1,18 @@
+// An async local `string[]` literal that mixes allocated and literal strings
+// keeps its allocated elements owned by the frame: the literals release as a
+// no-op beside them, and nothing leaks when the array crosses a suspension.
+import { sleepAsync } from "tyrus:task";
+
+const load = async (round: i32): Promise<string[]> => {
+    const names: string[] = [`red ${round}`, "blue"];
+    await sleepAsync(1);
+    print(names[1]);
+    return names;
+};
+
+const main = async (): Promise<void> => {
+    for (let round = 0; round < 5; round += 1) {
+        const names = await load(round);
+        print(names.length, names[0]);
+    }
+};

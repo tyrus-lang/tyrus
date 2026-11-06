@@ -1,0 +1,4 @@
+const main = (): void => {
+    const total: i32 = "not a number";
+    console.log(total);
+};

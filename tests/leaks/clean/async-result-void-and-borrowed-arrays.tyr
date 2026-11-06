@@ -1,0 +1,44 @@
+// `Promise<Result<void, E>>` carries no success payload to clone or drop, and an
+// async local that reads an array of objects out of other storage (a local, the
+// success of `?` on one, a field) keeps a clone the frame then releases.
+import { sleepAsync } from "tyrus:task";
+
+interface Paint {
+    name: string;
+    shade: i32;
+}
+
+interface Palette {
+    paints: Paint[];
+}
+
+interface Failure {
+    code: string;
+}
+
+const load = async (ok: boolean): Promise<Result<Paint[], Failure>> => {
+    if (ok) {
+        const paints: Paint[] = [{ name: `red ${1}`, shade: 1 }, { name: "blue", shade: 2 }];
+        return Ok(paints);
+    }
+    const failure: Failure = { code: `E${2}` };
+    return Err(failure);
+};
+
+const check = async (ok: boolean): Promise<Result<void, Failure>> => {
+    const paints = await load(ok)?;
+    const palette: Palette = { paints: paints };
+    const copy = palette.paints;
+    await sleepAsync(1);
+    print(copy.length, copy[0].name);
+    return Ok();
+};
+
+const main = async (): Promise<void> => {
+    for (let round = 0; round < 20; round += 1) {
+        match (await check(round % 2 === 0)) {
+            Ok() => {}
+            Err(failure) => { print(failure.code); }
+        }
+    }
+};

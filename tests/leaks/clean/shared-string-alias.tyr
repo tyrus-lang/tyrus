@@ -1,0 +1,25 @@
+// One buffer reached from two places at once. A `string` moves on assignment,
+// so two owning names never come from `const b = a`, the borrow checker
+// refuses it. They come from somewhere that must duplicate the value while the
+// source is still live, and pushing the same string twice is the plainest of
+// those: the array's two elements and the local all name one allocation.
+//
+// Since a `string` is immutable, giving each its own copy was only ever a way
+// to stop several owners from freeing one allocation twice, which is the job a
+// reference count does directly. This is the case that says it is doing it:
+// three references, one buffer, freed once.
+//
+// Expected output is 7800.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const source: string = "shared-buffer".toUpperCase();
+        let parts: string[] = [];
+        parts.push(source);
+        parts.push(source);
+        total += parts[0].length;
+        total += parts[1].length;
+        total += source.length;
+    }
+    console.log(total);
+};

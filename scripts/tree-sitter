@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# Regenerate and validate the tree-sitter grammar.
+#
+#   1. regenerates src/parser.c from grammar.js;
+#   2. runs the grammar's own corpus (tree-sitter test).
+#
+# Corpus results are compared against the baseline in
+# editors/tree-sitter-tyrus/parse-baseline.env.
+#
+# Called by scripts/editors. Run it directly while iterating on grammar.js.
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+grammar_dir="${project_dir}/editors/tree-sitter-tyrus"
+baseline_file="${grammar_dir}/parse-baseline.env"
+
+if command -v tree-sitter >/dev/null 2>&1; then
+    ts=(tree-sitter)
+elif command -v npx >/dev/null 2>&1; then
+    ts=(npx --yes tree-sitter-cli)
+else
+    echo "==> Skipping the tree-sitter grammar (install the CLI with 'npm i -g tree-sitter-cli')"
+    exit 0
+fi
+
+# shellcheck source=/dev/null
+source "${baseline_file}"
+
+echo "==> Regenerating the tree-sitter parser"
+(cd "${grammar_dir}" && "${ts[@]}" generate)
+
+echo "==> Running the grammar corpus"
+corpus_output="$(cd "${grammar_dir}" && "${ts[@]}" test 2>&1 || true)"
+corpus_failures="$(printf '%s\n' "${corpus_output}" | grep -oE 'failed parses: [0-9]+' | grep -oE '[0-9]+' | tail -1)"
+corpus_failures="${corpus_failures:-0}"
+if [[ "${corpus_failures}" -gt "${CORPUS_FAILURES}" ]]; then
+    printf '%s\n' "${corpus_output}"
+    echo "error: corpus failures rose from ${CORPUS_FAILURES} to ${corpus_failures}"
+    exit 1
+fi
+if [[ "${corpus_failures}" -lt "${CORPUS_FAILURES}" ]]; then
+    echo "    corpus failures fell from ${CORPUS_FAILURES} to ${corpus_failures}"
+    echo "    lower CORPUS_FAILURES in ${baseline_file} to ${corpus_failures}"
+    exit 1
+fi
+echo "    ${corpus_failures} known corpus failure(s), unchanged"

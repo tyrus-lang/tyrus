@@ -1,0 +1,39 @@
+// A recursively owned Promise payload delegated, adopted, consumed, and discarded.
+interface Metadata {
+    label: string;
+    aliases: string[];
+    note?: string;
+}
+
+interface Result {
+    metadata: Metadata;
+}
+
+async function source(label: string): Promise<Result> {
+    return {
+        metadata: {
+            label: label.toUpperCase(),
+            aliases: "ready,done".split(","),
+            note: label,
+        },
+    };
+}
+
+async function delegated(label: string): Promise<Result> {
+    return await source(label);
+}
+
+async function adopted(label: string): Promise<Result> {
+    return delegated(label);
+}
+
+const main = async (): Promise<void> => {
+    let total: usize = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const result: Result = await adopted("value");
+        total += result.metadata.aliases[1].length;
+        await source("discarded");
+    }
+    console.log(total);
+    console.log("assert:", 800);
+};

@@ -1,0 +1,7 @@
+// Snippet E: Import tyrus:net, must fail with --sandbox
+import { tcpConnect } from "tyrus:net";
+
+const main = (): void => {
+    let socket = tcpConnect("evil.com:1337")?;
+    print(socket);
+}

@@ -1,0 +1,20 @@
+// SparseTable query/len/isEmpty in a 200-iteration loop.
+import { SparseTable } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const data: i32[] = [7, 2, 9, 1, 5, 8, 3, 4, 6, 0, 5, 9, 2, 8, 1, 7];
+        const st = SparseTable(data);
+        total += st.query(0, 16);
+        total += st.query(2, 10);
+        total += st.query(15, 16);
+        total += st.query(1, 15);
+        total += st.len() as i32;
+        if (st.isEmpty()) {
+            total += 1;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 4600);
+};

@@ -1,0 +1,54 @@
+// A user-declared interface is not stored in the order it was written: fields
+// are sorted widest-alignment-first so the padding between them collapses. The
+// index a field is read and written at therefore differs from the index it was
+// declared at, and the release plan an object carries is a list of those
+// indexes, so a plan built against the declared order would free the wrong
+// field, or free a scalar as if it were an allocation.
+//
+// That is what this case is for. Every kind of owned field is put next to a
+// narrow scalar that the sort moves past it: a string, an array, an array
+// inside a nested struct. Under the declared order these sit at one index;
+// under the storage order they sit at another. If any site disagreed, valgrind
+// answers with an invalid free rather than a wrong number.
+
+interface Inner {
+    tag: u8;
+    words: string[];
+    weight: f64;
+}
+
+interface Row {
+    flag: boolean;
+    label: string;
+    small: u8;
+    id: i64;
+    tags: string[];
+    ok: boolean;
+    inner: Inner;
+    count: i32;
+}
+
+function describe(row: Row): string {
+    return row.label + " " + row.tags[0] + " " + row.inner.words[0];
+}
+
+const main = (): void => {
+    let total: i64 = 0;
+
+    for (let index: i32 = 0; index < 200; index = index + 1) {
+        const row: Row = {
+            flag: true,
+            label: "row-" + index.toString(),
+            small: 3,
+            id: 900000000001,
+            tags: ["alpha".toUpperCase(), "beta"],
+            ok: false,
+            inner: { tag: 9, words: ["nested".toLowerCase()], weight: 0.5 },
+            count: index,
+        };
+
+        total = total + row.id + (row.count as i64) + (describe(row).length as i64);
+    }
+
+    console.log(total);
+};

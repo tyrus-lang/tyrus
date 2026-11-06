@@ -1,0 +1,29 @@
+[package]
+name = "tyrus-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LLVM code generation for the Tyrus programming language."
+
+[dependencies]
+inkwell.workspace = true
+libc = "0.2"
+# Must track the version `inkwell` resolves to, since the ORC JIT calls in
+# `repl_session.rs` hand inkwell-owned pointers to it: two `llvm-sys` versions
+# in the graph are two distinct opaque types, and the mismatch surfaces as a
+# type error rather than as a version complaint.
+llvm-sys = "231.0.1"
+tyrus-core = { path = "../tyrus-core" }
+serde_json.workspace = true
+tyrus-decimal = { path = "../tyrus-decimal" }
+rustc-hash.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO"] }
+
+[dev-dependencies]
+logos.workspace = true
+
+[lints]
+workspace = true

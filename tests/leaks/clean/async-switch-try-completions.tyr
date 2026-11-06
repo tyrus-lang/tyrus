@@ -1,0 +1,32 @@
+async function pause(): Promise<void> {
+    return;
+}
+
+async function exercise(): Promise<string> {
+    try {
+        switch (true) {
+            case true: {
+                await pause();
+                break;
+            }
+        }
+        throw "owned".toUpperCase();
+    } catch (error: string) {
+        await pause();
+        let observed: string = error.toLowerCase();
+        observed = observed.toUpperCase();
+        "temporary".toUpperCase();
+        return observed;
+    } finally {
+        await pause();
+    }
+}
+
+const main = async (): Promise<void> => {
+    let result: string = "unset";
+    for (let index: i32 = 0; index < 200; index += 1) {
+        result = await exercise();
+    }
+    console.log(result);
+    console.log("assert:", "OWNED");
+};

@@ -1,0 +1,22 @@
+// heavyLightDecomposition in a 200-iteration loop, with a rebind, unbound
+// temporaries, a bound queryPath result (an array of tuple ranges), and a
+// different root each iteration.
+import { heavyLightDecomposition } from "tyrus:algorithm";
+
+const main = (): void => {
+    const adj: usize[][] = [[1, 2], [0, 3, 4], [0, 5, 6], [1], [1], [2], [2]];
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let tree = heavyLightDecomposition(adj, 0);
+        total += tree.queryPath(3, 4).length;
+        tree = heavyLightDecomposition(adj, 1);
+        total += tree.queryPath(5, 6).length;
+        total += heavyLightDecomposition(adj, 0).queryPath(3, 6).length;
+        total += heavyLightDecomposition([[1], [0, 2], [1]], 0)
+            .queryPath(1, 2).length;
+        const bound: [usize, usize][] = heavyLightDecomposition(adj, 0).queryPath(4, 5);
+        total += bound.length;
+    }
+    console.log(total);
+    console.log("assert:", 2200);
+};

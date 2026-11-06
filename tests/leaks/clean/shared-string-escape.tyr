@@ -1,0 +1,19 @@
+// A reference that outlives the scope which created it. The function's local
+// goes at the closing brace; the returned value keeps the buffer alive because
+// it holds a reference of its own, not because anything copied the text.
+//
+// Expected output is 2800.
+const build = (): string => {
+    const local: string = "escaping-value".toUpperCase();
+    const shared: string = local;
+    return shared;
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const escaped: string = build();
+        total += escaped.length;
+    }
+    console.log(total);
+};

@@ -1,0 +1,102 @@
+// Every one of these runtime entry points copies its text on the calling
+// thread, because the work outlives the call: `address.as_str().to_owned()` is
+// the first thing each of them does. So the value built for the argument has no
+// reader left the moment the call returns, and nothing was releasing it.
+//
+// A URL written inline leaked one string per request, while the same call with
+// the URL in a binding was clean. That asymmetry is what made it read as a
+// style question rather than a leak, and it is why both forms are here: a
+// binding handed in stays the caller's, and releasing it would be a double free
+// rather than a fix.
+//
+// The inline form also used to fail to compile inside a nested async closure,
+// with `Instruction does not dominate all uses`. Same cause: with no ownership
+// consumed at the call, the pending entry was swept later, from a block that
+// did not dominate the value. Releasing it where it is read settles both, which
+// is why this file carries the nested form as well.
+//
+// With the release removed, this case fails to build rather than reporting
+// bytes, because the nested form is the half that does not compile. The leak
+// half was measured on its own before the fix: 350 bytes across 10 requests
+// that wrote the URL inline without nesting.
+import { createRouter, fetch, HttpError, HttpReply, HttpRouter, HttpServer, HttpStatus, ServerOptions, TextBody } from "tyrus:http";
+import { resolve, tcpListen, udpBind, NetError, TcpListener, UdpSocket } from "tyrus:net";
+
+async function fetchInline(base: string): Promise<i32> {
+    // A closure nested in an async function: the shape that did not compile.
+    let seen: i32 = 0;
+    const once = async (): Promise<void> => {
+        try {
+            const note = await fetch.get(`${base}/note`);
+            note.close();
+        } catch (error: HttpError) {
+            console.log("the inline request failed");
+        }
+    };
+    const work: Promise<void> = once();
+    await work;
+    seen += 1;
+    return seen;
+}
+
+async function fetchFromBinding(base: string): Promise<i32> {
+    const url: string = `${base}/note`;
+    try {
+        const first = await fetch.get(url);
+        first.close();
+        // Read again afterwards: releasing the binding here would have freed
+        // what this still uses.
+        const second = await fetch(url);
+        second.close();
+        return url.length as i32 > 0 ? 1 : 0;
+    } catch (error: HttpError) {
+        console.log("the bound request failed");
+        return 0;
+    }
+}
+
+async function netInline(host: string): Promise<i32> {
+    try {
+        const addresses: string[] = await resolve(`${host}`);
+        const listener: TcpListener = await tcpListen(`${host}:0`);
+        listener.close();
+        const socket: UdpSocket = await udpBind(`${host}:0`);
+        socket.close();
+        return addresses.length as i32 > 0 ? 1 : 0;
+    } catch (error: NetError) {
+        console.log("a net call failed");
+        return 0;
+    }
+}
+
+/// A loop of its own, because a loop that awaits cannot sit inside a `try`.
+async function repeatEverything(base: string): Promise<i32> {
+    let total: i32 = 0;
+    for (let index: i32 = 0; index < 10; index += 1) {
+        const inline: i32 = await fetchInline(base);
+        const bound: i32 = await fetchFromBinding(base);
+        const net: i32 = await netInline("127.0.0.1");
+        total += inline + bound + net;
+    }
+    return total;
+}
+
+const main = async (): Promise<void> => {
+    const app: HttpRouter = createRouter();
+    app.get("/note", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            reply.status(HttpStatus.Ok).send("note");
+        },
+    });
+    let total: i32 = 0;
+    const server = app.listen(0, { host: "127.0.0.1" }) onfail {
+        console.log(`the server did not start: ${server.code}`);
+        return;
+    };
+        const base: string = `http://127.0.0.1:${server.port()}`;
+        total = await repeatEverything(base);
+        await server.close();
+    console.log(total);
+    console.log("assert:", 30);
+};

@@ -1,0 +1,43 @@
+// A `string[]` grown by `push` leaked its elements (~8 B per iteration) and,
+// when it started from an empty literal, its whole buffer as well (64 B/iter).
+// Closed together by the run-time ownership mode in `string_array_ownership`.
+//
+// Two defects met here. `push` copied the argument's 8 raw pointer bytes into
+// the array without taking ownership, so a computed element was released as an
+// ordinary statement temporary right after the call and the array kept a
+// dangling pointer, a use-after-free that read recycled heap bytes and
+// segfaulted in `__strlen_avx2` under the HTTP dispatcher. Making `push` store
+// a clone fixed the crash and moved the cost to a leak: nothing released the
+// clone. Separately, an *empty* literal was claimed by nobody at all
+// (`claims_buffer` required `value_elements > 0`), so its buffer leaked whole.
+//
+// Why a static `ReleasePlan` could not close it: the plan is decided once, at
+// the point in the AST where the binding is declared, and it has to answer
+// "may the elements be freed?", but `parts.push(x)` inside an `if` or a loop
+// is one point in the AST that only sometimes runs. An array still holding its
+// literal's `.rodata` pointers and one holding clones are indistinguishable at
+// compile time, and guessing wrong is not a leak but a `free` on `.rodata`.
+// The mode is therefore stored in a stack slot and read back: `1` releases the
+// buffer alone, `2` releases elements and buffer through
+// `tyrus_array_drop_string_contents`.
+//
+// A mutation promotes `1` to `2` first (`normalize_string_array_for_mutation`),
+// cloning what the array still borrows exactly once. That is what keeps a
+// never-mutated static array allocation-free, and what makes `fill`, `splice`
+// and `copyWithin` (which free whatever element they overwrite) safe to run
+// in their owned-string forms outside an async frame. All three silently
+// corrupted before this: `fill` on a literal array produced empty elements.
+//
+// Expected output is 600.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let fromEmpty: string[] = [];
+        fromEmpty.push("item-" + i.toString());
+        let fromLiteral: string[] = ["seed"];
+        fromLiteral.push("item-" + i.toString());
+        total += fromEmpty.length + fromLiteral.length;
+    }
+    console.log(total);
+    console.log("assert:", 600);
+};

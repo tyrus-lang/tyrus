@@ -1,0 +1,147 @@
+import { simdAdd, simdSub, simdMul, simdDiv, SimdError } from "tyrus:simd";
+
+export function runSimdArrayAddExamples(): void {
+    const left: f32[] = [1.0, 2.0, 3.0, 4.0, 5.0];
+    const right: f32[] = [10.0, 20.0, 30.0, 40.0, 50.0];
+    const result: Result<f32[], SimdError> = simdAdd(left, right);
+
+    match (result) {
+        Ok(values) => {
+            print(values[0]); // 11.0
+            print(values[1]); // 22.0
+            print(values[2]); // 33.0
+            print(values[3]); // 44.0
+            print(values[4]); // 55.0
+        }
+        Err(error) => {
+            printError(error.code, error.message); // ERR_SIMD_OUT_OF_MEMORY simdAdd could not allocate its result array
+        }
+    }
+
+    const integerLeft: i32[] = [1, 2, 3, 4, 5];
+    const integerRight: i32[] = [10, 20, 30, 40, 50];
+    const integerResult: Result<i32[], SimdError> = simdAdd(integerLeft, integerRight);
+    match (integerResult) {
+        Ok(values) => {
+            print(values[0]); // 11
+            print(values[4]); // 55
+        }
+        Err(error) => {
+            printError(error.code, error.message); // ERR_SIMD_OUT_OF_MEMORY simdAdd could not allocate its result array
+        }
+    }
+
+    const unsignedLeft: u8[] = [255; 5];
+    const unsignedRight: u8[] = [1; 5];
+    const unsignedResult: Result<u8[], SimdError> = simdAdd(unsignedLeft, unsignedRight);
+    match (unsignedResult) {
+        Ok(values) => {
+            print(values[0]); // 0
+        }
+        Err(error) => {
+            printError(error.code, error.message); // ERR_SIMD_OUT_OF_MEMORY simdAdd could not allocate its result array
+        }
+    }
+
+    const signedLeft: i8[] = [120; 5];
+    const signedRight: i8[] = [120; 5];
+    const signedResult: Result<i8[], SimdError> = simdAdd(signedLeft, signedRight);
+    match (signedResult) {
+        Ok(values) => {
+            print(values); // [-16, -16, -16, -16, -16]
+        }
+        Err(error) => {
+            printError(error.code, error.message);
+        }
+    }
+
+    const subtractLeft: i32[] = [20, 30, 40, 50, 60];
+    const subtractRight: i32[] = [3, 4, 5, 6, 7];
+    const subtractResult: Result<i32[], SimdError> = simdSub(subtractLeft, subtractRight);
+    match (subtractResult) {
+        Ok(values) => {
+            print(values); // [17, 26, 35, 44, 53]
+        }
+        Err(error) => {
+            printError(error.code, error.message); // ERR_SIMD_OUT_OF_MEMORY simdSub could not allocate its result array
+        }
+    }
+
+    const multiplyLeft: f32[] = [2.0, 3.0, 4.0, 5.0, 6.0];
+    const multiplyRight: f32[] = [3.0, 4.0, 5.0, 6.0, 7.0];
+    const multiplyResult: Result<f32[], SimdError> = simdMul(multiplyLeft, multiplyRight);
+    match (multiplyResult) {
+        Ok(values) => {
+            print(values); // [6.0, 12.0, 20.0, 30.0, 42.0]
+        }
+        Err(error) => {
+            printError(error.code, error.message); // ERR_SIMD_OUT_OF_MEMORY simdMul could not allocate its result array
+        }
+    }
+
+    const fixedLeft: [i32; 5] = [1, 2, 3, 4, 5];
+    const fixedRight: [i32; 5] = [10, 20, 30, 40, 50];
+    const fixedAdd: Result<i32[], SimdError> = simdAdd(fixedLeft, fixedRight);
+    match (fixedAdd) {
+        Ok(values) => {
+            print(values); // [11, 22, 33, 44, 55]
+        }
+        Err(error) => {
+            printError(error.code, error.message);
+        }
+    }
+
+    const fixedSub: Result<i32[], SimdError> = simdSub(fixedLeft, fixedRight);
+    match (fixedSub) {
+        Ok(values) => {
+            print(values); // [-9, -18, -27, -36, -45]
+        }
+        Err(error) => {
+            printError(error.code, error.message);
+        }
+    }
+
+    const fixedMul: Result<i32[], SimdError> = simdMul(fixedLeft, fixedRight);
+    match (fixedMul) {
+        Ok(values) => {
+            print(values); // [10, 40, 90, 160, 250]
+        }
+        Err(error) => {
+            printError(error.code, error.message);
+        }
+    }
+
+    const divisionLeft: i32[] = [100, 81, 72, 55, 42];
+    const divisionRight: i32[] = [10, 9, 8, 5, 6];
+    const divisionResult: Result<i32[], SimdError> = simdDiv(divisionLeft, divisionRight);
+    match (divisionResult) {
+        Ok(values) => {
+            print(values); // [10, 9, 9, 11, 7]
+        }
+        Err(error) => {
+            printError(error.code, error.message);
+        }
+    }
+
+    const zeroDivisors: i32[] = [2, 0, 2, 2, 2];
+    const zeroResult: Result<i32[], SimdError> = simdDiv(divisionLeft, zeroDivisors);
+    match (zeroResult) {
+        Ok(values) => {
+            print(values);
+        }
+        Err(error) => {
+            printError(error.code, error.message); // ERR_SIMD_DIVISION_BY_ZERO simdDiv cannot divide an integer lane by zero
+        }
+    }
+
+    const short: f32[] = [1.0, 2.0];
+    const mismatch: Result<f32[], SimdError> = simdAdd(left, short);
+    match (mismatch) {
+        Ok(values) => {
+            printError("Unexpected successful result"); // Unexpected successful result
+        }
+        Err(error) => {
+            printError(error.code); // ERR_SIMD_LENGTH_MISMATCH
+        }
+    }
+}

@@ -1,0 +1,38 @@
+// A `throw` from the synchronous stretches of a suspending `try` reaches the
+// handler, and the thrown string is released exactly once on every path: the
+// handler that falls out of its own end, and the one that returns.
+
+import { sleepAsync } from "tyrus:task";
+
+function step(fail: boolean, tag: string): i32 throws string {
+    if (fail) {
+        throw `failure-${tag}`;
+    }
+    return 1;
+}
+
+async function returning(early: boolean, late: boolean): Promise<i32> {
+    try {
+        const before: i32 = step(early, "early");
+        await sleepAsync(0);
+        const after: i32 = step(late, "late");
+        return before + after;
+    } catch (error: string) {
+        const size: i32 = error.length as i32;
+        return size;
+    }
+}
+
+async function main(): Promise<void> {
+    let observed: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const clean = await returning(false, false);
+        observed += clean;
+        const early = await returning(true, false);
+        observed += early;
+        const late = await returning(false, true);
+        observed += late;
+    }
+    console.log(observed);
+    console.log("assert:", 5400);
+}

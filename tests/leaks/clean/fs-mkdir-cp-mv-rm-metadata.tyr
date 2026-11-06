@@ -1,0 +1,67 @@
+// The remaining `tyrus:fs` surface that does not return an owned string or
+// array to the caller, `mkdir`, `cp`, `mv`, `removeAll`, `chmod`,
+// `atomicWrite`, `stat`, `metadata`, and `diskUsage`, still allocates and
+// frees internal path strings (`resolve_path`) on every call. Added as part
+// of implementing `tyrus-fs.md`, satisfying `AGENTS.md`'s rule that any
+// feature touching allocation gets a leak-corpus entry, even one whose
+// return value is a plain value struct or nothing at all. Covers the loop
+// case, an unbound temporary, a bound name, and a rebind.
+//
+// `chown` is deliberately not exercised here, see
+// `tests/leaks/known/fs-chown-computed-path` for its own, still-open leak.
+import { mkdir, cp, mv, rm, removeAll, chmod, atomicWrite, stat, metadata, diskUsage, writeFileSync, FileMode, type RmOptions, type CpOptions, type FileStats, type Metadata, type DiskUsage, type FsError } from "tyrus:fs";
+
+const main = (): void => {
+    const dir = "./__fs_secondary_ops_leak_tmp__";
+    const opts: RmOptions = { force: true, recursive: true };
+    try {
+        rm(dir, opts);
+    } catch (e: FsError) {}
+
+    for (let i: i32 = 0; i < 150; i += 1) {
+        try {
+            mkdir(dir);
+            writeFileSync(`${dir}/source.txt`, "content");
+
+            const cpOpts: CpOptions = { force: true };
+            cp(`${dir}/source.txt`, `${dir}/copy.txt`, cpOpts);
+            mv(`${dir}/copy.txt`, `${dir}/moved.txt`);
+
+            chmod(`${dir}/moved.txt`, FileMode.AllRead);
+            atomicWrite(`${dir}/atomic.txt`, "atomic content");
+
+            const statResult: Result<FileStats, FsError> = stat(`${dir}/moved.txt`);
+            match (statResult) {
+                Ok(info) => { console.log(info.size > 0); }
+                Err(_) => { console.log(false); }
+            }
+            console.log("assert:", true);
+
+            // Unbound temporary: never named, swept by the same end-of-scope path.
+            stat(`${dir}/moved.txt`);
+
+            // Rebind: any owned payload the previous value held must be
+            // released before this overwrites it.
+            let rebound: Result<Metadata, FsError> = metadata(`${dir}/moved.txt`);
+            rebound = metadata(`${dir}/atomic.txt`);
+            match (rebound) {
+                Ok(value) => { console.log(value.size > 0); }
+                Err(_) => { console.log(false); }
+            }
+            console.log("assert:", true);
+
+            const usage: Result<DiskUsage, FsError> = diskUsage(dir);
+            match (usage) {
+                Ok(value) => { console.log(value.total > 0); }
+                Err(_) => { console.log(false); }
+            }
+            console.log("assert:", true);
+
+            removeAll(dir);
+        } catch (e: FsError) {}
+    }
+
+    try {
+        rm(dir, opts);
+    } catch (e: FsError) {}
+};

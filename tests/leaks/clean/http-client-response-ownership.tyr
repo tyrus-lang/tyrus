@@ -1,0 +1,70 @@
+// A response read and not explicitly closed leaked, which is every response in
+// the documentation: `close()` appears nowhere in it. `fetch` hands the awaited
+// value over with `tyrus_promise_take_value`, which transfers the payload out
+// of the Promise, so from then on the frame is the only owner. The frame's drop
+// glue reached the arm for an opaque handle, which releases nothing on the
+// grounds that the program gives such a handle up explicitly.
+//
+// A response is the awkward case that rule did not cover: it *can* be given up
+// explicitly, so the frame drop alone would free twice what a program closed
+// itself. `close()` now gives its ownership up where it stands, writing a null
+// back into the slot and clearing the initialization bit, so exactly one of the
+// two releases the response and a program is free to close or not.
+//
+// Both paths are here on purpose: the leak is the one that does not close, and
+// the double free is the one that does.
+import { createRouter, fetch, HttpError, HttpReply, HttpRouter, HttpServer, HttpStatus, ServerOptions, TextBody } from "tyrus:http";
+
+async function readAndLeaveOpen(url: string): Promise<i32> {
+    try {
+        const response = await fetch.get(url);
+        const length: i32 = response.text().length as i32;
+        return length;
+    } catch (error: HttpError) {
+        console.log(`the request failed: ${error.code}`);
+        return 0;
+    }
+}
+
+async function readAndClose(url: string): Promise<i32> {
+    try {
+        const response = await fetch.get(url);
+        const length: i32 = response.text().length as i32;
+        response.close();
+        return length;
+    } catch (error: HttpError) {
+        console.log(`the request failed: ${error.code}`);
+        return 0;
+    }
+}
+
+/// A loop of its own, because a loop that awaits cannot sit inside a `try`.
+async function readEveryWay(url: string): Promise<i32> {
+    let total: i32 = 0;
+    for (let index: i32 = 0; index < 10; index += 1) {
+        const open: i32 = await readAndLeaveOpen(url);
+        const closed: i32 = await readAndClose(url);
+        total += open + closed;
+    }
+    return total;
+}
+
+const main = async (): Promise<void> => {
+    const app: HttpRouter = createRouter();
+    app.get("/hello", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            reply.status(HttpStatus.Ok).send("hi");
+        },
+    });
+    let total: i32 = 0;
+    const server = app.listen(0, { host: "127.0.0.1" }) onfail {
+        console.log(`the server did not start: ${server.code}`);
+        return;
+    };
+        const url: string = `http://127.0.0.1:${server.port()}/hello`;
+        total = await readEveryWay(url);
+        await server.close();
+    console.log(total);
+    console.log("assert:", 40);
+};

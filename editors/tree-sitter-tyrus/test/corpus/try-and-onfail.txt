@@ -1,0 +1,186 @@
+==================
+Try operator inside a call
+==================
+
+const f = (ok: boolean): Result<i32, string> => {
+    return Ok(load(ok)?);
+};
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters
+          (parameter
+            name: (identifier)
+            type: (primitive_type)))
+        return_type: (generic_type
+          name: (type_identifier
+            (type_identifier))
+          (type_arguments
+            (primitive_type)
+            (primitive_type)))
+        body: (block
+          (return_statement
+            (call_expression
+              function: (identifier)
+              arguments: (arguments
+                (try_expression
+                  (call_expression
+                    function: (identifier)
+                    arguments: (arguments
+                      (identifier))))))))))))
+
+==================
+Try operator on a member and after await
+==================
+
+const f = async (): Result<i32, string> => {
+    const a = v.b?;
+    const c = await g()?;
+    return Ok(a);
+};
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters)
+        return_type: (generic_type
+          name: (type_identifier
+            (type_identifier))
+          (type_arguments
+            (primitive_type)
+            (primitive_type)))
+        body: (block
+          (declaration
+            (variable_declaration
+              name: (identifier)
+              value: (try_expression
+                (member_expression
+                  object: (identifier)
+                  property: (identifier)))))
+          (declaration
+            (variable_declaration
+              name: (identifier)
+              value: (try_expression
+                (await_expression
+                  (call_expression
+                    function: (identifier)
+                    arguments: (arguments))))))
+          (return_statement
+            (call_expression
+              function: (identifier)
+              arguments: (arguments
+                (identifier)))))))))
+
+==================
+Ternary still parses next to the try operator
+==================
+
+const a = c ? 1 : 2;
+const b = x || y ? 1 : 2;
+const d = c ? e : g ? h : i;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (identifier)
+        (number)
+        (number))))
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (binary_expression
+          left: (identifier)
+          right: (identifier))
+        (number)
+        (number))))
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (identifier)
+        (identifier)
+        (ternary_expression
+          (identifier)
+          (identifier)
+          (identifier))))))
+
+==================
+Try operator inside a ternary branch
+==================
+
+const a = c ? f(x)? : 2;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (identifier)
+        (try_expression
+          (call_expression
+            function: (identifier)
+            arguments: (arguments
+              (identifier))))
+        (number)))))
+
+==================
+Onfail with a block
+==================
+
+const f = (): void => {
+    const r = load(ok) onfail { print(r); };
+};
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters)
+        return_type: (primitive_type)
+        body: (block
+          (declaration
+            (variable_declaration
+              name: (identifier)
+              value: (call_expression
+                function: (identifier)
+                arguments: (arguments
+                  (identifier)))
+              onfail: (onfail_clause
+                (block
+                  (expression_statement
+                    (call_expression
+                      function: (identifier)
+                      arguments: (arguments
+                        (identifier)))))))))))))
+
+==================
+Onfail with a fallback expression
+==================
+
+const r = load(ok) onfail 0;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (call_expression
+        function: (identifier)
+        arguments: (arguments
+          (identifier)))
+      onfail: (onfail_clause
+        (number)))))

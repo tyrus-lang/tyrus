@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Runs the filesystem half of the `.tyr` leak corpus (`tests/leaks/**/fs-*.tyr`).
+#
+# Split out of `scripts/leak-check` for the same reason
+# `scripts/leak-check-repl`/`scripts/leak-check-jit` are: cost unrelated to what
+# a change touches. These cases spend their time in syscalls, where valgrind's
+# overhead is far worse than on ordinary compute, in a measured run
+# `fs-glob-search-diff` alone took over 18 minutes, more than every non-fs case
+# put together, so leaving them in the default run made even a one-line string
+# change pay for them.
+#
+# Run this when `tyrus:fs` changes, or when the ownership of native string and
+# array results changes (which is what these cases actually guard: `glob`,
+# `search`, `diff`, `readdir` and friends each hand back an owned
+# `TyrusStringArray` plus one allocation per entry). `scripts/validate` runs it
+# as part of the full gate, so nothing is lost from the complete check.
+#
+# `--fast` picks the ASan/LSan backend, which is the one worth using here: the
+# syscall overhead that makes these cases expensive is exactly what valgrind
+# handles worst.
+#
+# Usage:
+#   scripts/leak-check-fs           # all filesystem cases, under valgrind
+#   scripts/leak-check-fs --fast    # the same, far quicker
+
+set -uo pipefail
+
+# Serial by default, unlike the main corpus, because parallelism buys nothing
+# measurable here and risks perturbing what these cases measure. Several of them
+# wait on filesystem events (`fs-watch-close-leak` most obviously), so their wall
+# clock is mostly waiting rather than CPU, and it varies widely run to run: on a
+# 12-core machine with the fast backend the same eight cases took 285s and 549s
+# on two serial runs, 523s with four jobs and 434s with twelve. Those numbers do
+# not rank the job counts, the spread within one setting is as large as the
+# spread between settings. Serial is the default because concurrent cases
+# competing for the disk can change the timing of the very events being waited
+# on, not because it is faster. Override with `TYRUS_LEAK_JOBS`.
+export TYRUS_LEAK_JOBS="${TYRUS_LEAK_JOBS:-1}"
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "${project_dir}/scripts/leak-check" --fs-only "$@"

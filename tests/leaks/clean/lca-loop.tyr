@@ -1,0 +1,20 @@
+// lcaBinaryLifting in a 200-iteration loop, with a rebind, unbound temporaries,
+// a bound query result, and a different root each iteration.
+import { lcaBinaryLifting } from "tyrus:algorithm";
+
+const main = (): void => {
+    const adj: usize[][] = [[1, 2], [0, 3, 4], [0, 5, 6], [1], [1], [2], [2]];
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let tree = lcaBinaryLifting(adj, 0);
+        total += tree.query(3, 4);
+        tree = lcaBinaryLifting(adj, 1);
+        total += tree.query(5, 6);
+        total += lcaBinaryLifting(adj, 0).query(3, 6);
+        total += lcaBinaryLifting([[1], [0, 2], [1]], 0).query(1, 2);
+        const bound: usize = lcaBinaryLifting(adj, 0).query(4, 5);
+        total += bound;
+    }
+    console.log(total);
+    console.log("assert:", 800);
+};

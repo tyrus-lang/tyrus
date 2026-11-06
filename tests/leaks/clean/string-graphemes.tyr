@@ -1,0 +1,27 @@
+// `graphemes()` hands back an array whose buffer and every element string
+// belong to the caller, the same ownership `split()` has, which is why the two
+// are registered together.
+//
+// The loop is what turns a missing release into something the corpus can
+// measure: one leaked cluster is a few bytes, three hundred iterations of a
+// string that splits into six clusters is not. The emoji is the case that
+// matters, because it is where a cluster holds more than one scalar value and
+// so allocates more than a single byte, the six clusters of `a👨‍🚀é-ok`
+// hold eight scalar values between them, which is the gap the two counts
+// below record.
+export function main(): void {
+    let clusters: usize = 0;
+    let letters: usize = 0;
+    for (let round: i32 = 0; round < 300; round += 1) {
+        const mixed: string = "a👨‍🚀é-ok";
+        const parts: string[] = mixed.graphemes();
+        clusters += parts.length;
+        for (let i: usize = 0; i < parts.length; i += 1) {
+            letters += parts[i].length;
+        }
+    }
+    console.log(clusters);
+    console.log("assert:", 1800);
+    console.log(letters);
+    console.log("assert:", 2400);
+}

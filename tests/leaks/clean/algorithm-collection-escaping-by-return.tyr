@@ -1,0 +1,60 @@
+// A user function that returns an owned `tyrus:algorithm` collection handle
+// (`SortedSet<T>` here, and by the same mechanism every other native
+// collection in this module: `AvlTree`, `RedBlackTree`, `Counter`, `Deque`,
+// ...) leaked it once the caller stored the result in a new binding.
+//
+// The construction call itself (`SortedSet<i32>()`) always registered its
+// result correctly, so a directly constructed local was never the leak. What
+// was missing was the transfer of that ownership *across the call boundary*,
+// and it was missing in two places at once, which is why fixing either alone
+// did nothing.
+//
+// `returns_owned_container_analysis` decides whether a callee provably hands
+// back something it allocated, and its `allocates` predicate knew only
+// `NewMap`/`NewSet`, a `tyrus:algorithm` constructor was invisible to it, so
+// `makeSet` never entered `fn_owned_returns`. And the registration at the call
+// site, which consults that set, matched a hand-written list of five container
+// types; the other twenty-odd were excluded even for a callee that had been
+// proven to allocate.
+//
+// The fix keeps both answers derived rather than listed.
+// `is_collection_constructor_target` reads `algorithm_builtins()`, a
+// constructor is the entry whose return type is its own name, so a collection
+// added later is recognized the day it is registered.
+// `native_collection_handle` is the companion of the free dispatcher's
+// collection arms, and `native_collection_free_covers_every_handle` fails if
+// the two drift apart.
+//
+// The earlier attempt recorded here, widening `async_owned_value_supported`,
+// was correctly reverted: that predicate also drives async frame layout and
+// deep-clone glue, neither of which an opaque handle has, and it made
+// `has_nested_owned_native_results` misclassify unrelated locals. Ownership at
+// a call boundary turned out to be a separate question, and it got a separate
+// answer instead of a wider one.
+import { SortedSet } from "tyrus:algorithm";
+
+const makeSet = (): SortedSet<i32> => {
+    const s: SortedSet<i32> = SortedSet<i32>();
+    s.insert(4);
+    return s;
+};
+
+// The other half of the same boundary, and the one that fails loudly instead
+// of quietly: this hands back a handle it borrowed, so claiming it would free
+// `s` twice per iteration. AddressSanitizer reports that as a double free, not
+// as a leak, which is why the fixed shape and the shape it must not become
+// live in one case.
+const passthrough = (borrowed: SortedSet<i32>): SortedSet<i32> => {
+    return borrowed;
+};
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const s = makeSet();
+        const same = passthrough(s);
+        total += same.contains(4) ? 1 : 0;
+    }
+    console.log(total);
+    console.log("assert:", 200);
+};

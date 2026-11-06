@@ -1,0 +1,70 @@
+const inspect = (): usize => {
+    try {
+        throw "sync boom".toUpperCase();
+    } catch (error: unknown) {
+        if (typeof error === "string") {
+            return error.length;
+        }
+        return 0;
+    }
+};
+
+const observe = (): void => {
+    try {
+        throw "observed".toUpperCase();
+    } catch (error: unknown) {
+        if (typeof error === "string") {
+            console.log(error.length);
+        }
+    }
+};
+
+const rethrow = (): usize => {
+    try {
+        try {
+            throw "inner".toUpperCase();
+        } catch (error: unknown) {
+            throw error;
+        }
+    } catch (outer: unknown) {
+        if (typeof outer === "string") {
+            return outer.length;
+        }
+        return 0;
+    }
+};
+
+async function loadUnknown(): Promise<string> {
+    try {
+        throw "async boom".toUpperCase();
+    } catch (error: unknown) {
+        if (typeof error === "string") {
+            return error;
+        }
+        return "other";
+    }
+}
+
+async function loadString(): Promise<string> {
+    try {
+        throw "async text".toUpperCase();
+    } catch (error: string) {
+        return error;
+    }
+}
+
+async function main(): Promise<void> {
+    let total: usize = 0;
+    let index: i32 = 0;
+    while (index < 200) {
+        total += inspect();
+        observe();
+        total += rethrow();
+        const fromUnknown = await loadUnknown();
+        total += fromUnknown.length;
+        const fromString = await loadString();
+        total += fromString.length;
+        index += 1;
+    }
+    console.log(total);
+}

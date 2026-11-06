@@ -1,0 +1,24 @@
+// A function returning a tuple with an owned element (`[i32, string]`) is
+// claimed by the caller as fully owned, which relies on the string actually
+// being cloned into a fresh allocation on the way out. `emit_async_clone_
+// value_into` had no `Type::Tuple` arm, so it fell to the catch-all plain
+// store: the tuple's raw string pointer, here the literal `"erro"`'s
+// static constant, never allocated, was copied as-is instead of `strdup`'d.
+// The caller then freed that pointer believing it owned a fresh allocation:
+// `free()` on a `@str`-style global constant, not a heap chunk,
+// `munmap_chunk(): invalid pointer`, a crash rather than a leak. Closed by
+// giving `emit_async_clone_value_into` a `Type::Tuple` arm that walks each
+// element positionally, mirroring the one `emit_async_drop_value_in_place`
+// already had.
+function pair(): [i32, string] {
+    return [42, "erro"];
+}
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const [code, message] = pair();
+        total += code + (message.length as i32);
+    }
+    console.log(total);
+};

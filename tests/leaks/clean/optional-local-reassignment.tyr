@@ -1,0 +1,31 @@
+// `let x: T?;` followed by `x = <bare value>;`, reassigning an already-
+// declared `Optional` local from a bare, non-optional value (a literal, a
+// numeric cast), leaked the freshly-boxed payload on every assignment.
+// `VarDecl` already guards this exact shape for an initializer
+// (`value_is_boxed_here`, registering the box `emit_optional_box` builds
+// inside `emit_expr_as`, since that helper never registers its own release);
+// a later `Assign` to the same binding took a completely different codegen
+// path (`prepare_owned_native_assignment`) that had no equivalent
+// registration, so it never found a pending entry to claim, the box was
+// simply never freed, on the first assignment or any rebind after it. Closed
+// by mirroring `VarDecl`'s exact guard inside `StmtKind::Assign`, right
+// before the existing `prepare_owned_native_assignment` call it feeds.
+//
+// Expected output is 147.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 3; i += 1) {
+        let pending: i32?;
+        total += (pending ?? 0) as usize;
+
+        pending = 42;
+        total += (pending ?? 0) as usize;
+
+        // Rebind: the previous box must be released before the new one
+        // replaces it, not just the new one claimed.
+        pending = 7;
+        total += (pending ?? 0) as usize;
+    }
+    console.log(total);
+    console.log("assert:", 147);
+};

@@ -1,0 +1,43 @@
+// `readdir`'s array of `DirEntry` owns two allocations per element: the
+// `TyrusArray` buffer itself (`std::mem::forget`n out of `collect_dir_entries`'s
+// `Vec`) and each entry's `name` (`alloc_string`). Added as part of
+// implementing `tyrus-fs.md` to close a gap the review found: nothing in
+// `tests/leaks/` exercised `readdir` at all, recursive or not. Covers the
+// loop case, an unbound temporary, a bound name, and a rebind.
+import { readdir, mkdir, writeFileSync, rm, type RmOptions, type ReaddirOptions, type FsError } from "tyrus:fs";
+
+const main = (): void => {
+    const dir = "./__readdir_leak_tmp__";
+    const opts: RmOptions = { force: true, recursive: true };
+    try {
+        rm(dir, opts);
+        mkdir(dir);
+        mkdir(`${dir}/sub`);
+        writeFileSync(`${dir}/a.txt`, "a");
+        writeFileSync(`${dir}/sub/b.txt`, "b");
+    } catch (e: FsError) {}
+
+    for (let i: i32 = 0; i < 200; i += 1) {
+        try {
+            const flatOpts: ReaddirOptions = { recursive: false };
+            const flat = readdir(dir, flatOpts);
+            console.log(flat.length);
+            console.log("assert:", 2);
+
+            // Unbound temporary: never named, swept by the same end-of-scope path.
+            readdir(dir, flatOpts);
+
+            // Rebind: the previous `rebound` array must be released before this
+            // overwrites it.
+            let rebound = readdir(dir, flatOpts);
+            const recursiveOpts: ReaddirOptions = { recursive: true };
+            rebound = readdir(dir, recursiveOpts);
+            console.log(rebound.length);
+            console.log("assert:", 3);
+        } catch (e: FsError) {}
+    }
+
+    try {
+        rm(dir, opts);
+    } catch (e: FsError) {}
+};

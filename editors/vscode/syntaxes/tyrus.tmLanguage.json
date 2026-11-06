@@ -1,0 +1,504 @@
+{
+  "name": "tyrus",
+  "scopeName": "source.tyr",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#imports" },
+    { "include": "#templates" },
+    { "include": "#strings" },
+    { "include": "#regex" },
+    { "include": "#numbers" },
+    { "include": "#builtins" },
+    { "include": "#decorators" },
+    { "include": "#object-property-keyword" },
+    { "include": "#type-declaration" },
+    { "include": "#type-operators" },
+    { "include": "#extends-clause" },
+    { "include": "#keywords" },
+    { "include": "#generic-parameters" },
+    { "include": "#db-query-call" },
+    { "include": "#generic-calls" },
+    { "include": "#types" },
+    { "include": "#parameters" },
+    { "include": "#type-annotations" },
+    { "include": "#functions" },
+    { "include": "#constants" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "imports": {
+      "patterns": [
+        {
+          "name": "meta.import.tyr",
+          "begin": "\\bimport\\b",
+          "beginCaptures": { "0": { "name": "keyword.control.import.tyr" } },
+          "end": "(?=;)|(?<=[\"'])\\s*$",
+          "patterns": [
+            { "include": "#comments" },
+            { "include": "#strings" },
+            { "name": "keyword.control.import.tyr", "match": "\\b(?:from|as)\\b" },
+            { "name": "punctuation.definition.import.tyr", "match": "[{}]" },
+            { "name": "punctuation.separator.import.tyr", "match": "," }
+          ]
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.double-slash.tyr", "match": "//.*$" },
+        {
+          "name": "comment.block.documentation.tyr",
+          "begin": "/\\*\\*(?!/)",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.tyr" } },
+          "end": "\\*/",
+          "endCaptures": { "0": { "name": "punctuation.definition.comment.tyr" } },
+          "patterns": [
+            { "name": "keyword.other.documentation.tyr", "match": "(?<=^|\\s)@[a-zA-Z_][a-zA-Z0-9_]*" }
+          ]
+        },
+        { "name": "comment.block.tyr", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.double.sql.tyr",
+          "begin": "(?<=\\bdb\\.query(?:\\s*<[^<>]*>)?\\s*\\(\\s*)\"\"\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+          "end": "\"\"\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+          "patterns": [
+            { "name": "string.quoted.single.sql.tyr", "begin": "'", "end": "'" },
+            { "name": "string.quoted.identifier.sql.tyr", "begin": "\\\"", "end": "\\\"" },
+            { "name": "keyword.control.import.tyr", "match": "\\b(?:SELECT|DISTINCT|FROM|WHERE|AND|OR|NOT|IS|NULL|AS|JOIN|INNER|LEFT|RIGHT|FULL|OUTER|ON|GROUP|BY|HAVING|ORDER|LIMIT|OFFSET|ASC|DESC|INSERT|INTO|VALUES|UPDATE|SET|DELETE|RETURNING|COUNT|SUM|AVG|MIN|MAX)\\b" }
+          ]
+        },
+        {
+          "name": "string.quoted.triple.double.tyr",
+          "begin": "\"\"\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+          "end": "\"\"\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+          "patterns": [
+            { "name": "constant.character.escape.tyr", "match": "\\\\(?:[\\\\\"nrt0]|u\\{[0-9A-Fa-f]+\\})" }
+          ]
+        },
+        {
+          "name": "string.quoted.double.sql.tyr",
+          "begin": "(?<=\\bdb\\.query(?:\\s*<[^<>]*>)?\\s*\\(\\s*)\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+          "end": "\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+          "patterns": [
+            { "name": "string.quoted.single.sql.tyr", "begin": "'", "end": "'" },
+            { "name": "string.quoted.identifier.sql.tyr", "begin": "\\\"", "end": "\\\"" },
+            { "name": "keyword.control.import.tyr", "match": "\\b(?:SELECT|DISTINCT|FROM|WHERE|AND|OR|NOT|IS|NULL|AS|JOIN|INNER|LEFT|RIGHT|FULL|OUTER|ON|GROUP|BY|HAVING|ORDER|LIMIT|OFFSET|ASC|DESC|INSERT|INTO|VALUES|UPDATE|SET|DELETE|RETURNING|COUNT|SUM|AVG|MIN|MAX)\\b" },
+            { "name": "constant.character.escape.tyr", "match": "\\\\(?:[\\\\\"nrt0]|u\\{[0-9A-Fa-f]+\\})" }
+          ]
+        },
+        {
+          "name": "string.quoted.double.tyr",
+          "begin": "\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+          "end": "\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+          "patterns": [
+            { "name": "constant.character.escape.tyr", "match": "\\\\(?:[\\\\\"nrt0]|u\\{[0-9A-Fa-f]+\\})" }
+          ]
+        },
+        {
+          "name": "string.quoted.single.tyr",
+          "begin": "'",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+          "end": "'",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+          "patterns": [
+            { "name": "constant.character.escape.tyr", "match": "\\\\(?:[\\\\'nrt0]|u\\{[0-9A-Fa-f]+\\})" }
+          ]
+        }
+      ]
+    },
+    "regex": {
+      "patterns": [
+        {
+          "name": "string.regexp.tyr",
+          "match": "(?<=(?:^|[=(,:\\[!&|?{};+\\-*/%<>~^]|\\b(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await|and|or|not)\\b)\\s*)/(?:\\\\.|\\[[^\\]\\r\\n]*(?:\\\\.[^\\]\\r\\n]*)*\\]|[^/\\\\\\r\\n])+/[A-Za-z]*"
+        }
+      ]
+    },
+    "decorators": {
+      "patterns": [
+        {
+          "match": "(@)(model|id|default|column|foreignKey)\\b",
+          "captures": {
+            "1": { "name": "punctuation.definition.decorator.tyr" },
+            "2": { "name": "keyword.control.import.tyr" }
+          }
+        },
+        {
+          "match": "(@)(unique)\\b(?!\\s*\\()",
+          "captures": {
+            "1": { "name": "punctuation.definition.decorator.tyr" },
+            "2": { "name": "keyword.control.import.tyr" }
+          }
+        },
+        {
+          "match": "(@)([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()",
+          "captures": {
+            "1": { "name": "punctuation.definition.decorator.tyr" },
+            "2": { "name": "entity.name.function.decorator.tyr" }
+          }
+        }
+      ]
+    },
+    "templates": {
+      "patterns": [
+        {
+          "name": "string.quoted.other.template.tyr",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            {
+              "name": "meta.embedded.expression.tyr",
+              "begin": "\\$\\{",
+              "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.tyr" } },
+              "end": "\\}",
+              "endCaptures": { "0": { "name": "punctuation.section.embedded.end.tyr" } },
+              "patterns": [{ "include": "source.tyr" }]
+            },
+            { "name": "constant.character.escape.tyr", "match": "\\\\." }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "meta.numeric.decimal.tyr",
+          "match": "\\b([0-9](?:_?[0-9])*(?:\\.[0-9](?:_?[0-9])*)?(?:[eE][+-]?[0-9](?:_?[0-9])*)?)([dD])\\b",
+          "captures": {
+            "1": { "name": "constant.numeric.float.tyr" },
+            "2": { "name": "storage.type.tyr" }
+          }
+        },
+        {
+          "name": "meta.numeric.float.tyr",
+          "match": "\\b([0-9]+(?:\\.[0-9]+(?:[eE][+-]?[0-9]+)?|[eE][+-]?[0-9]+))(f(?:32|64|128))\\b",
+          "captures": {
+            "1": { "name": "constant.numeric.float.tyr" },
+            "2": { "name": "storage.type.tyr" }
+          }
+        },
+        {
+          "name": "meta.numeric.unsigned.tyr",
+          "match": "\\b(0[xX][0-9a-fA-F_]+|0[bB][0-1_]+|0[oO][0-7_]+|[0-9][0-9_]*)(u(?:8|16|32|64|128|size))\\b",
+          "captures": {
+            "1": { "name": "constant.numeric.integer.tyr" },
+            "2": { "name": "storage.type.tyr" }
+          }
+        },
+        {
+          "name": "meta.numeric.signed.tyr",
+          "match": "\\b(0[xX][0-9a-fA-F_]+|0[bB][0-1_]+|0[oO][0-7_]+|[0-9][0-9_]*)(i(?:8|16|32|64|128|size))\\b",
+          "captures": {
+            "1": { "name": "constant.numeric.integer.tyr" },
+            "2": { "name": "storage.type.tyr" }
+          }
+        },
+        { "name": "constant.numeric.float.tyr", "match": "\\b[0-9]+\\.[0-9]+(?:[eE][+-]?[0-9]+)?\\b" },
+        { "name": "constant.numeric.float.tyr", "match": "\\b[0-9]+[eE][+-]?[0-9]+\\b" },
+        { "name": "constant.numeric.hex.tyr", "match": "\\b0[xX][0-9a-fA-F_]+\\b" },
+        { "name": "constant.numeric.binary.tyr", "match": "\\b0[bB][0-1_]+\\b" },
+        { "name": "constant.numeric.octal.tyr", "match": "\\b0[oO][0-7_]+\\b" },
+        { "name": "constant.numeric.integer.tyr", "match": "\\b[0-9][0-9_]*\\b" }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "meta.definition.variable.tyr entity.name.function.tyr",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*(?::\\s*(?:\\([^)]*\\)|[^=;])*)?=\\s*(?:<[^>]+>\\s*)?\\([^)]*\\)\\s*(?::\\s*[^=;]+)?\\s*=>)"
+        },
+        { "name": "entity.name.function.tyr", "match": "\\b([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\()" }
+      ]
+    },
+    "parameters": {
+      "patterns": [
+        {
+          "comment": "`function name(` is unambiguous, unlike a bare call, the `(` here is guaranteed to open a parameter list, so a variable-length lookbehind (Oniguruma supports it; VS Code's engine, confirmed via npm run check) can single out this case and color every parameter, not just the first.",
+          "name": "meta.parameters.tyr",
+          "begin": "(?<=\\bfunction\\s+[A-Za-z_][A-Za-z0-9_]*(?:<[^<>]*>)?\\s*)\\(",
+          "beginCaptures": { "0": { "name": "punctuation.definition.parameters.begin.tyr" } },
+          "end": "\\)",
+          "endCaptures": { "0": { "name": "punctuation.definition.parameters.end.tyr" } },
+          "patterns": [
+            { "include": "#comments" },
+            { "include": "#strings" },
+            {
+              "name": "variable.parameter.tyr",
+              "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\??\\s*(?::|,|\\)))"
+            },
+            { "include": "#type-annotations" },
+            { "include": "#types" },
+            { "name": "punctuation.separator.parameter.tyr", "match": "," }
+          ]
+        },
+        {
+          "comment": "A parameter-list `(` is never immediately preceded by an identifier, `)` or `]`, those spell a call or index (`callee(`, `)(`, `](`). Consuming that `(` here (without scoping it) rejects call arguments like `console.log(x, y)` while still coloring an arrow-function parameter. The lookbehind is a single fixed-width negative class, which Oniguruma (VS Code's engine) accepts. Only the first parameter is colored by TextMate; the LSP semantic tokens color every parameter (including named-function ones) precisely once attached.",
+          "match": "(?<![A-Za-z0-9_)\\]])\\(\\s*(?:\\.\\.\\.\\s*)?([A-Za-z_][A-Za-z0-9_]*)(?:\\?)?(?=\\s*(?::|=|,))",
+          "captures": { "1": { "name": "variable.parameter.tyr" } }
+        },
+        {
+          "comment": "Destructured parameter (`{ a, b }` / `[a, b]`) in the same non-call `(` position; a value array/object argument (e.g. styleText([\"a\"], ...)) is a call and is rejected by the same fixed-width guard.",
+          "match": "(?<![A-Za-z0-9_)\\]])\\(\\s*(?:\\.\\.\\.\\s*)?(\\{\\s*(?:[A-Za-z_][A-Za-z0-9_,\\s]*)?\\}|\\[\\s*(?:[A-Za-z_][A-Za-z0-9_,\\s]*)?\\])(?:\\?)?(?=\\s*(?::|=|,))",
+          "captures": { "1": { "name": "variable.parameter.destructured.tyr" } }
+        }
+      ]
+    },
+    "generic-parameters": {
+      "patterns": [
+        {
+          "name": "meta.type.parameters.tyr",
+          "begin": "<(?=\\s*(?:\"[^\"\\r\\n]*\"|[A-Z][A-Za-z0-9_]*|i32|i64|i128|isize|u32|u64|u128|usize|f32|f64|f128|boolean|string|RegExp|unknown|never)(?:\\s+extends\\b|\\s*[,>|]))",
+          "beginCaptures": { "0": { "name": "entity.name.type.generic.tyr" } },
+          "end": ">",
+          "endCaptures": { "0": { "name": "entity.name.type.generic.tyr" } },
+          "patterns": [
+            { "include": "#strings" },
+            { "include": "#types" },
+            { "name": "storage.modifier.tyr", "match": "\\bextends\\b" },
+            { "name": "keyword.operator.expression.tyr", "match": "\\b(?:keyof|infer)\\b" },
+            { "name": "entity.name.type.generic.tyr", "match": "\\b[A-Z][A-Za-z0-9_]*\\b" },
+            { "name": "keyword.operator.type.tyr", "match": "[|&]" },
+            { "name": "punctuation.separator.type.parameter.tyr", "match": "," }
+          ]
+        }
+      ]
+    },
+    "generic-calls": {
+      "patterns": [
+        {
+          "name": "meta.function-call.generic.tyr",
+          "begin": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(<)(?=\\s*(?:\"[^\"\\r\\n]*\"|[A-Za-z_][A-Za-z0-9_]*)(?:\\s*[,<>\\[\\]?|&]))(?=(?:[^<>]|<[^<>]*>)*>\\s*\\()",
+          "beginCaptures": {
+            "1": { "name": "entity.name.function.tyr" },
+            "2": { "name": "entity.name.type.generic.tyr" }
+          },
+          "end": ">(?=\\s*\\()",
+          "endCaptures": { "0": { "name": "entity.name.type.generic.tyr" } },
+          "patterns": [
+            { "include": "#generic-type" },
+            { "include": "#types" },
+            { "name": "entity.name.type.tyr", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" },
+            { "name": "punctuation.separator.type.tyr", "match": "," },
+            { "name": "keyword.operator.type.tyr", "match": "[|&]" },
+            { "name": "keyword.operator.optional.tyr", "match": "\\?" }
+          ]
+        }
+      ]
+    },
+    "db-query-call": {
+      "patterns": [
+        {
+          "name": "meta.db.query.tyr",
+          "begin": "\\b(db)\\.(query)(?:\\s*(<)([^<>]*)(>))?\\s*(\\()",
+          "beginCaptures": {
+            "1": { "name": "variable.other.object.tyr" },
+            "2": { "name": "entity.name.function.tyr" },
+            "3": { "name": "entity.name.type.generic.tyr" },
+            "4": { "name": "entity.name.type.generic.tyr" },
+            "5": { "name": "entity.name.type.generic.tyr" },
+            "6": { "name": "punctuation.section.arguments.begin.tyr" }
+          },
+          "end": "(?<=[\"'])",
+          "patterns": [
+            {
+              "name": "string.quoted.triple.double.sql.tyr",
+              "begin": "\"\"\"",
+              "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+              "end": "\"\"\"",
+              "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+              "patterns": [
+                { "name": "string.quoted.single.sql.tyr", "begin": "'", "end": "'" },
+                { "name": "string.quoted.identifier.sql.tyr", "begin": "\\\"", "end": "\\\"" },
+                { "name": "keyword.control.import.tyr", "match": "\\b(?:SELECT|DISTINCT|FROM|WHERE|AND|OR|NOT|IS|NULL|AS|JOIN|INNER|LEFT|RIGHT|FULL|OUTER|ON|GROUP|BY|HAVING|ORDER|LIMIT|OFFSET|ASC|DESC|INSERT|INTO|VALUES|UPDATE|SET|DELETE|RETURNING|COUNT|SUM|AVG|MIN|MAX|LIKE)\\b" }
+              ]
+            },
+            {
+              "name": "string.quoted.double.sql.tyr",
+              "begin": "\"",
+              "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.tyr" } },
+              "end": "\"",
+              "endCaptures": { "0": { "name": "punctuation.definition.string.end.tyr" } },
+              "patterns": [
+                { "name": "string.quoted.single.sql.tyr", "begin": "'", "end": "'" },
+                { "name": "string.quoted.identifier.sql.tyr", "begin": "\\\"", "end": "\\\"" },
+                { "name": "keyword.control.import.tyr", "match": "\\b(?:SELECT|DISTINCT|FROM|WHERE|AND|OR|NOT|IS|NULL|AS|JOIN|INNER|LEFT|RIGHT|FULL|OUTER|ON|GROUP|BY|HAVING|ORDER|LIMIT|OFFSET|ASC|DESC|INSERT|INTO|VALUES|UPDATE|SET|DELETE|RETURNING|COUNT|SUM|AVG|MIN|MAX|LIKE)\\b" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "type-annotations": {
+      "patterns": [
+        {
+          "name": "meta.type.annotation.tyr",
+          "begin": ":(?!\\s*(?:true|false|null)\\b)(?=\\s*(?:&\\s*(?:mut\\s+)?|\\{|\\(|[A-Za-z_][A-Za-z0-9_]*\\b(?!\\s*[.(]))(?:\\s*(?:<|\\[\\]|\\?|=>|[,)=;={]))?)",
+          "beginCaptures": { "0": { "name": "keyword.control.type.annotation.tyr" } },
+          "end": "(?=\\s*(?:[,)=;{]|=>|=))",
+          "patterns": [
+            { "include": "#generic-type" },
+            { "include": "#types" },
+            {
+              "name": "meta.type.object.tyr",
+              "begin": "\\{",
+              "beginCaptures": { "0": { "name": "punctuation.definition.type.object.begin.tyr" } },
+              "end": "\\}",
+              "endCaptures": { "0": { "name": "punctuation.definition.type.object.end.tyr" } },
+              "patterns": [
+                { "include": "#types" },
+                { "name": "variable.other.property.tyr", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\??\\s*:)" },
+                { "name": "keyword.operator.optional.tyr", "match": "\\?" },
+                { "name": "keyword.control.type.annotation.tyr", "match": ":" },
+                { "name": "punctuation.separator.type.member.tyr", "match": "[,;]" }
+              ]
+            },
+            {
+              "name": "meta.type.function.tyr",
+              "match": "\\([^)]*\\)\\s*=>\\s*(?:&\\s*(?:mut\\s+)?)?[A-Za-z_][A-Za-z0-9_]*(?:<[^>]+>)?(?:\\[\\])?\\??"
+            },
+            { "name": "storage.modifier.tyr", "match": "\\b(?:readonly|extends)\\b" },
+            { "name": "storage.modifier.borrow.tyr", "match": "(?<=&)\\bmut\\b" },
+            {
+              "name": "entity.name.type.generic.tyr",
+              "match": "(<|,)\\s*([A-Z][A-Za-z0-9_]*)(?=\\s*(?:extends|,|>))",
+              "captures": { "2": { "name": "entity.name.type.generic.tyr" } }
+            },
+            { "name": "entity.name.type.tyr", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?:<[^>]+>)?(?:\\[\\])?\\??" },
+            { "name": "keyword.operator.type.tyr", "match": "[|&]" },
+            { "name": "keyword.operator.optional.tyr", "match": "\\?" }
+          ]
+        }
+      ]
+    },
+    "generic-type": {
+      "patterns": [
+        {
+          "name": "meta.type.generic.tyr",
+          "begin": "\\b([A-Z][A-Za-z0-9_]*)\\s*(<)",
+          "beginCaptures": {
+            "1": { "name": "entity.name.type.tyr" },
+            "2": { "name": "entity.name.type.generic.tyr" }
+          },
+          "end": ">",
+          "endCaptures": { "0": { "name": "entity.name.type.generic.tyr" } },
+          "patterns": [
+            { "include": "#generic-type" },
+            { "include": "#types" },
+            { "name": "entity.name.type.tyr", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" },
+            { "name": "punctuation.separator.type.tyr", "match": "," },
+            { "name": "keyword.operator.optional.tyr", "match": "\\?" }
+          ]
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        { "name": "variable.other.object.tyr", "match": "\\b(?:console|styleText)\\b" },
+        { "name": "entity.name.function.tyr", "match": "(?<=\\.)\\b(?:log|error|warn)\\b" }
+      ]
+    },
+    "object-property-keyword": {
+      "patterns": [
+        {
+          "comment": "A reserved word used as an object-literal property key (e.g. `default:`) is a property, not a keyword.",
+          "name": "variable.other.property.tyr",
+          "match": "\\b(?:const|let|if|else|return|while|loop|for|of|in|break|continue|do|switch|throw|throws|try|catch|finally|function|async|typeof|case|default|match|when|import|export|interface|enum|type|from|as|extends|null|i32|i64|i128|isize|u32|u64|u128|usize|f32|f64|f128|boolean|string|void|unknown|never|readonly|new|true|false)\\b(?=\\s*:)"
+        }
+      ]
+    },
+    "type-declaration": {
+      "comment": "The name introduced by `interface`/`type`/`enum` is a type entity.",
+      "match": "\\b(interface|type|enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.interface.tyr" },
+        "2": { "name": "entity.name.type.tyr" }
+      }
+    },
+    "type-operators": {
+      "patterns": [
+        {
+          "comment": "`keyof T` / `infer R`: the operator plus the type name it applies to.",
+          "match": "\\b(keyof|infer)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.operator.expression.tyr" },
+            "2": { "name": "entity.name.type.tyr" }
+          }
+        },
+        { "name": "keyword.operator.expression.tyr", "match": "\\b(?:keyof|infer)\\b" }
+      ]
+    },
+    "extends-clause": {
+      "comment": "Interface supertypes and conditional-type bounds after `extends`.",
+      "begin": "\\bextends\\b",
+      "beginCaptures": { "0": { "name": "storage.modifier.tyr" } },
+      "end": "(?=[{?])",
+      "patterns": [
+        { "include": "#types" },
+        { "include": "#strings" },
+        { "name": "entity.name.type.tyr", "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b" },
+        { "name": "punctuation.separator.type.tyr", "match": "," }
+      ]
+    },
+    "types": {
+      "patterns": [
+        { "name": "storage.type.tyr", "match": "\\b(?:i32|i64|i128|isize|u32|u64|u128|usize|f32|f64|f128|boolean|string|RegExp|void|unknown|never)\\b" },
+        { "comment": "Built-in utility types and collections, colored like the primitive types.", "name": "storage.type.tyr", "match": "\\b(?:Partial|Required|Readonly|Pick|Omit|Record|Exclude|Extract|ReturnType|Parameters|Set|Map)\\b" },
+        { "name": "support.type.tyr", "match": "\\b(?:InputOptions|PasswordOptions|ConfirmOptions|SelectOptions|MultiSelectOptions|NumberOptions)\\b" },
+        { "comment": "GENERATED from PRIMITIVE_TYPES in crates/tyrus-core/src/keywords.rs by `cargo run -p xtask`, catches any primitive type not already given a specific scope above, so a newly added narrow type (e.g. i16/u8) is never left unstyled.", "name": "storage.type.tyr", "match": "\\b(?:char|decimal|i16|i8|u16|u8)\\b" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "storage.type.tyr", "match": "\\b(?:const|let)\\b" },
+        { "name": "keyword.control.conditional.tyr", "match": "\\b(?:if|else)\\b" },
+        { "name": "keyword.control.loop.tyr", "match": "\\b(?:while|loop|for|of|do|in|return|break|continue)\\b" },
+        { "name": "keyword.control.switch.tyr", "match": "\\b(?:switch|case|default)\\b" },
+        { "name": "keyword.control.exception.tyr", "match": "\\b(?:throw|throws|try|catch|finally)\\b" },
+        { "name": "keyword.control.match.tyr", "match": "\\b(?:match|when)\\b" },
+        { "name": "keyword.control.import.tyr", "match": "\\b(?:import|from|as)\\b" },
+        { "name": "keyword.control.import.tyr", "match": "\\bawait\\b" },
+        { "name": "keyword.control.export.tyr", "match": "\\bexport\\b" },
+        { "name": "keyword.control.function.tyr", "match": "\\b(?:function|async)\\b" },
+        { "name": "storage.type.interface.tyr", "match": "\\b(?:interface|type|enum)\\b" },
+        { "name": "storage.modifier.tyr", "match": "\\b(?:extends|readonly)\\b" },
+        { "name": "storage.modifier.borrow.tyr", "match": "(?<=&)\\bmut\\b" },
+        { "name": "keyword.operator.expression.tyr", "match": "\\b(?:new|typeof)\\b" },
+        { "comment": "GENERATED from RESERVED_FUTURE in crates/tyrus-core/src/keywords.rs by `cargo run -p xtask`, do not edit the `match` by hand. Words reserved for future language features; not usable as identifiers but valid as member/property names, so the `(?<!\\.)` skips member access after `.`.", "name": "keyword.other.reserved.tyr", "match": "(?<!\\.)\\b(?:abstract|asserts|class|constructor|debugger|declare|delete|get|implements|infer|instanceof|intrinsic|keyof|module|namespace|new|out|override|package|private|protected|public|require|satisfies|set|static|super|this|unique|var|when|with|yield)\\b" },
+        { "comment": "GENERATED from ACTIVE_KEYWORDS in crates/tyrus-core/src/keywords.rs by `cargo run -p xtask`, catches any active keyword not already given a specific scope above, so a newly active keyword is never left unstyled.", "name": "keyword.other.tyr", "match": "\\b(?:at|comptime|defer|errdefer|is|onfail|protect|validator)\\b" }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.numeric.boolean.tyr", "match": "\\b(?:true|false)\\b" },
+        { "name": "constant.numeric.null.tyr", "match": "\\bnull\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "storage.type.function.arrow.tyr", "match": "=>" },
+        { "name": "keyword.operator.pipeline.tyr", "match": "\\|>" },
+        { "name": "keyword.operator.spread.tyr", "match": "\\.\\.\\." },
+        { "name": "keyword.operator.range.tyr", "match": "\\.\\.=|\\.\\." },
+        { "name": "keyword.operator.increment.tyr", "match": "\\+\\+|--" },
+        { "name": "keyword.operator.assignment.compound.tyr", "match": ">>>=|<<=|>>=|&&=|\\|\\|=|\\?\\?=|\\*\\*=|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=" },
+        { "name": "keyword.operator.comparison.tyr", "match": "===|!==|>=|<=" },
+        { "name": "keyword.operator.logical.tyr", "match": "&&|\\|\\||\\?\\?|\\?\\.|\\b(?:and|or|not)\\b" },
+        { "name": "keyword.operator.bitwise.tyr", "match": ">>>|<<|>>|[&|^~]" },
+        { "name": "keyword.control.loop.tyr", "match": "\\*\\*|[+\\-*/%]" },
+        { "name": "keyword.operator.tyr", "match": "[=!<>?:]" }
+      ]
+    }
+  }
+}

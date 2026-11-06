@@ -1,0 +1,32 @@
+// BloomFilter in a 200-iteration loop, with a rebind, unbound temporaries, and
+// a bound boolean contains result each iteration.
+import { BloomFilter } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let bf = BloomFilter(4, 1024);
+        bf.insert("apple");
+        bf.insert("banana");
+        if (bf.contains("apple")) {
+            total += 1;
+        }
+        if (bf.contains("missing")) {
+            total += 1;
+        }
+        bf = BloomFilter(4, 1024);
+        bf.insert("kiwi");
+        if (bf.contains("kiwi")) {
+            total += 1;
+        }
+        if (BloomFilter(4, 1024).contains("absent")) {
+            total += 1;
+        }
+        const bound: boolean = BloomFilter(4, 1024).contains("bound");
+        if (bound) {
+            total += 1;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 400);
+};

@@ -1,0 +1,37 @@
+// `const label: string? = "a".toUpperCase();`, a value that is itself a
+// fresh allocation, coerced into an `Optional`, aborted with `double free
+// or corruption`.
+//
+// `VarDecl` takes the *nested-owned* path for this shape: it clones the box
+// into the binding's slot, then releases the original via
+// `emit_async_cleanup_source_expression`. That function frees a `string` by
+// matching the *shape* of the source expression, `async_owned_string_
+// expression` recognizes `"x".toUpperCase()` as provably an allocation, not
+// by forgetting the pending registration the call itself created when it
+// first ran. Two SSA registers hold the same runtime pointer at that point:
+// the original `%toUpperCase` (still pending, since boxing a value that
+// itself separately registers deliberately declines to also register the
+// box, see `map-get-optional-box`'s sibling gap, boxing an
+// already-registered payload rather than an unclaimed one) and a *reload* of
+// that same pointer out of the box's payload slot, a different register by
+// construction. `forget_owned_native_result` matches by exact SSA identity,
+// so freeing the reload never removed the original registration. Whatever
+// swept `pending_owned_native_results` next found it still there and freed
+// the same pointer a second time.
+//
+// Closed by broadening the type-keyed fallback removal that already existed
+// for this exact shape of problem with a *user function's* owned result
+// (`owned_user_function_call`) to also cover `async_owned_string_
+// expression`: any expression already recognized as provably an allocation
+// is about to be freed by shape in the very same function, so its stale
+// registration, found by matching pending-result type when identity
+// matching misses, is removed right alongside it.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const label: string? = "a".toUpperCase();
+        total += (label ?? "none").length;
+    }
+    console.log(total);
+    console.log("assert:", 200);
+};

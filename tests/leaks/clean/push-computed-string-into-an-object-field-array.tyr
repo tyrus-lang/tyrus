@@ -1,0 +1,49 @@
+// Pushing a computed string into a `string[]` that is a *field of an object*
+// leaked the string. The same push into a plain local `string[]` did not, that
+// shape was the control for this case, and stays clean.
+//
+// Found by `scripts/sanitizers` only after the two `known/` categories ahead of
+// it were closed: the earlier failure aborted the run in `algorithm_runtime`,
+// which runs before `array_runtime`, so this had never been reached. The test
+// it fails, `push_of_a_computed_string_into_an_object_field_array`, predates
+// the session that found it and passes without sanitizers.
+//
+// Comparing the two shapes at the IR level: both emit exactly one string
+// release (the push temporary, released right after the call) correct in
+// both. The difference was what was missing. The plain local emitted a deep
+// release of the array's contents at scope exit; the object-field version
+// emitted only a shallow `free` of the buffer, so the element the array kept
+// was never released. LeakSanitizer attributed the bytes to the original
+// `toUpperCase` rather than to a copy, which fits: the buffer is
+// reference-counted, the push shares it instead of copying, the temporary's
+// release drops the count to one, and the array held the last reference.
+//
+// The cause was a static answer to a question that had stopped being static.
+// An array literal records a release plan at construction, `Deep` when its
+// elements are allocations, `Buffer` when they are `.rodata` pointers a deep
+// release would corrupt. `[]` has no elements, so it recorded `Buffer`, and a
+// later `push` of an owned string made that answer wrong. A plain local does
+// not depend on the plan (mutating one promotes its own runtime ownership mode,
+// which supersedes it); an array inside an object has no such slot, so the plan
+// was the only answer it ever got.
+//
+// Closed by observing that the distinction is no longer needed for strings at
+// all: `TyrusString::release` returns immediately for a value that does not own
+// its buffer, so a deep release of a literal of static strings frees the buffer
+// and touches nothing else. A `string[]` therefore records `Deep` whatever its
+// elements looked like at construction, and stays correct however it is mutated
+// afterwards. Nothing changed for any other element type.
+interface Bucket {
+    labels: string[];
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let bucket: Bucket = { labels: [] };
+        bucket.labels.push("key".toUpperCase());
+        total += bucket.labels[0].length;
+    }
+    console.log(total);
+    console.log("assert:", 600);
+};

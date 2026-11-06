@@ -1,0 +1,23 @@
+// `?` over a local the scope still owns: the scope releases the local on the
+// way out, so the propagated error must be a copy, not the local's own string.
+const parse = (ok: boolean): Result<i32, string> => {
+    if (ok) {
+        return Ok(40);
+    }
+    return Err(`bad ${"input"}`);
+};
+
+const viaLocal = (ok: boolean): Result<i32[], string> => {
+    const result = parse(ok);
+    const value = result?;
+    return Ok([value, value]);
+};
+
+const main = (): void => {
+    for (let round = 0; round < 20; round += 1) {
+        match (viaLocal(round % 2 === 0)) {
+            Ok(values) => { print(values.length); }
+            Err(error) => { print(error); }
+        }
+    }
+};

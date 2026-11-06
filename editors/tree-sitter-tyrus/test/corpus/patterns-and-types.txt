@@ -1,0 +1,250 @@
+==================
+Payload pattern in a match arm
+==================
+
+const g = (v: Shape): f64 => {
+    match (v) {
+        Shape.Circle(radius) => radius;
+        Shape.Empty => 0.0;
+        (_) => 1.0;
+    }
+};
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters
+          (parameter
+            name: (identifier)
+            type: (type_identifier
+              (type_identifier))))
+        return_type: (primitive_type)
+        body: (block
+          (match_statement
+            value: (identifier)
+            (match_arm
+              pattern: (match_call_pattern
+                path: (identifier)
+                path: (identifier)
+                (identifier))
+              body: (identifier))
+            (match_arm
+              pattern: (match_path_pattern
+                (identifier)
+                (identifier))
+              body: (number))
+            (match_arm
+              pattern: (identifier)
+              body: (number))))))))
+
+==================
+Inclusive range pattern with a semicolon arm
+==================
+
+const g = (n: i32): string => {
+    match (n) {
+        90..=100 => "A";
+        (_) => "F";
+    }
+};
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters
+          (parameter
+            name: (identifier)
+            type: (primitive_type)))
+        return_type: (primitive_type)
+        body: (block
+          (match_statement
+            value: (identifier)
+            (match_arm
+              pattern: (match_range_pattern
+                (number)
+                (number))
+              body: (string))
+            (match_arm
+              pattern: (identifier)
+              body: (string))))))))
+
+==================
+Keyof and conditional types
+==================
+
+type K = keyof User;
+type C<T> = T extends string ? boolean : i32;
+---
+
+(source_file
+  (declaration
+    (type_alias_declaration
+      name: (identifier)
+      value: (keyof_type
+        (type_identifier
+          (type_identifier)))))
+  (declaration
+    (type_alias_declaration
+      name: (identifier)
+      (type_parameters
+        (type_parameter
+          name: (identifier)))
+      value: (conditional_type
+        check: (type_identifier
+          (type_identifier))
+        bound: (primitive_type)
+        consequence: (primitive_type)
+        alternative: (primitive_type)))))
+
+==================
+Rest element in an array pattern
+==================
+
+const g = (v: i32[]): i32 => {
+    match (v) {
+        [head, ...tail] => head;
+        (_) => 0;
+    }
+};
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters
+          (parameter
+            name: (identifier)
+            type: (array_type
+              (primitive_type))))
+        return_type: (primitive_type)
+        body: (block
+          (match_statement
+            value: (identifier)
+            (match_arm
+              pattern: (match_array_pattern
+                (identifier)
+                (match_rest_pattern
+                  name: (identifier)))
+              body: (identifier))
+            (match_arm
+              pattern: (identifier)
+              body: (number))))))))
+
+==================
+Validator modifier on a const declaration
+==================
+
+export validator const noSpaces = (value: string): Validator => { return value; };
+---
+
+(source_file
+  (export_statement
+    (declaration
+      (variable_declaration
+        name: (identifier)
+        value: (arrow_function
+          parameters: (parameters
+            (parameter
+              name: (identifier)
+              type: (primitive_type)))
+          return_type: (type_identifier
+            (type_identifier))
+          body: (block
+            (return_statement
+              (identifier))))))))
+
+==================
+Sized array type and repeated literal
+==================
+
+const a: [i32; 5] = [0; 5];
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      type: (sized_array_type
+        element: (primitive_type)
+        length: (number))
+      value: (repeated_array_literal
+        value: (number)
+        length: (number)))))
+
+==================
+Function type carrying an effect
+==================
+
+const f = (p: (string) => i32 throws string, t: string): i32 => { return 1; };
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters
+          (parameter
+            name: (identifier)
+            type: (function_type
+              (primitive_type)
+              (primitive_type)
+              throws: (primitive_type)))
+          (parameter
+            name: (identifier)
+            type: (primitive_type)))
+        return_type: (primitive_type)
+        body: (block
+          (return_statement
+            (number)))))))
+
+==================
+Several typed catch clauses
+==================
+
+const f = (): void => {
+    try { print("a"); } catch (e: HttpError) { print("b"); } catch (e: StreamError) { print("c"); }
+};
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters)
+        return_type: (primitive_type)
+        body: (block
+          (try_statement
+            body: (block
+              (expression_statement
+                (call_expression
+                  function: (identifier)
+                  arguments: (arguments
+                    (string)))))
+            (identifier)
+            (type_identifier
+              (type_identifier))
+            (block
+              (expression_statement
+                (call_expression
+                  function: (identifier)
+                  arguments: (arguments
+                    (string)))))
+            (identifier)
+            (type_identifier
+              (type_identifier))
+            (block
+              (expression_statement
+                (call_expression
+                  function: (identifier)
+                  arguments: (arguments
+                    (string)))))))))))

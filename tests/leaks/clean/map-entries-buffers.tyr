@@ -1,0 +1,43 @@
+// `Map.entries()` leaked three buffers per call.
+//
+// Originally 28 bytes/iteration over a one-entry `Map<string, i32>`:
+// `emit_map_entries` calls `emit_collection_array` twice internally (once
+// for keys, once for values) to build its own temporary arrays, then builds
+// a third, fresh array of `[K, V]` tuples by copying each field *by value*
+// out of those two, and none of the three was ever claimed.
+//
+// Closed in two passes. First, the two internal arrays: each tuple's fields
+// are a plain value copy (`build_load` then `build_insert_value`), so a key
+// that is itself an allocation ends up with two pointers to the same one,
+// the slot inside `keys`, and the copy just placed in a tuple. Only the
+// *buffer* that held those pointers belongs to `emit_map_entries`; the
+// pointers themselves moved into the tuples. Freeing the `keys`/`values`
+// buffers alone, right after the copy loop, closed those two without
+// touching what the tuples now alias.
+//
+// Second, the outer tuple array itself, plus what it aliases: registered
+// with the default `Deep` plan rather than a flat buffer-only one, which
+// routes through the async drop-glue system (`async_owned_value_supported` /
+// `emit_async_drop_value_in_place`) once a type qualifies. Neither had a case
+// for `Type::Tuple` before, this is the first caller to build one composed
+// of an owned element (a `string` key), so both gained one, positional
+// rather than named, mirroring the existing `Type::Named`/`Type::Object`
+// field-walking arm exactly: skip a `Copy` element, `build_struct_gep` and
+// recurse into the rest. The array-of-non-Copy-element path already existing
+// in `emit_async_drop_value_in_place` (built for `Type::Array(Type::Str)`,
+// among others) then walks the tuple array correctly with no further change,
+// freeing each tuple's owned key and the array's own buffer. Confirmed with
+// valgrind reporting zero heap blocks in use at exit, not just zero bytes
+// "definitely lost", and confirmed a returned entry's key is still valid
+// (not a dangling alias into a buffer freed out from under it) by reading it
+// back after the call.
+const main = (): void => {
+    const shared = Map<string, i32>();
+    shared.set("a", 1);
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += shared.entries().length;
+    }
+    console.log(total);
+    console.log("assert:", 200);
+};

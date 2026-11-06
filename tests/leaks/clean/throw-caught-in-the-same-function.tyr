@@ -1,0 +1,54 @@
+// A `throw` caught by a `try` in the same function released every owned
+// binding in the function, including the ones declared *outside* that `try`,
+// which the code after the `catch` then released a second time.
+//
+// `free(): double free` is the polite outcome; under mimalloc it spins at 100%
+// CPU instead, which is how this was found: a probe that should have printed
+// two lines hung forever. The window between the two releases is also a plain
+// use-after-free, `console.log(items.length)` after the `catch` reads a buffer
+// the throw path already freed.
+//
+// The minimal shape has no loop and no native collection in it at all. The
+// `for...of` that first exposed it was a red herring: it only mattered because
+// iterating an array keeps escape analysis from proving it stack-contained, so
+// the array was on the heap and had something to free twice. Indexed access
+// over the same literal left it on the stack, where a double free is a no-op.
+//
+// `emit_throw` unwound ownership to scope zero on the grounds that "a throw
+// leaves the scope for good". That is true of a throw that leaves the
+// *function*, and false of one caught here: control resumes in the `catch` and
+// keeps going, with every outer binding still live and still owned. The fix
+// reads the innermost active `try`'s scope depth from `catch_context_restores`,
+// the same source of truth `emit_recoverable_runtime_error_cleanups` already
+// used for a native recoverable error, which a `throw` statement simply never
+// asked. With no enclosing `try` in this function the depth is zero and the old
+// behavior stands, which is what keeps `boom` below from leaking.
+function boom(): void throws string {
+    let owned: i32[] = [];
+    owned.push(1);
+    throw "left the function";
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let items: i32[] = [];
+        items.push(1);
+        items.push(2);
+        try {
+            throw "caught here";
+        } catch (e: string) {
+            total += e.length;
+        }
+        // Reading it after the `catch` is the use-after-free half.
+        total += items.length;
+
+        try {
+            boom();
+        } catch (e: string) {
+            total += e.length;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 6000);
+};

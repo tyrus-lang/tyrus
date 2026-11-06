@@ -1,0 +1,30 @@
+// Async frame mutations must release temporary owned sources after cloning them into frame-owned storage.
+interface Holder {
+    label: string;
+}
+
+const main = async (): Promise<void> => {
+    let frameLabels: string[] = ["static", "array"];
+    let holder: Holder = { label: "initial" };
+    await Promise.resolve();
+    for (let index: i32 = 0; index < 200; index += 1) {
+        frameLabels[0] = "owned".toUpperCase();
+        frameLabels.push("pushed".toUpperCase());
+        frameLabels.fill("filled".toUpperCase(), 0, 1);
+        holder.label = "field".toUpperCase();
+        "discarded".toUpperCase();
+    }
+    frameLabels = frameLabels.concat(["tail".toUpperCase()]);
+    const derived: string[] = frameLabels.slice(1).toReversed().values();
+    await Promise.resolve();
+    console.log(frameLabels[0]);
+    console.log("assert:", "FILLED");
+    console.log(holder.label);
+    console.log("assert:", "FIELD");
+    console.log(frameLabels.length);
+    console.log("assert:", 203);
+    console.log(derived[0]);
+    console.log("assert:", "TAIL");
+    console.log(derived.length);
+    console.log("assert:", 202);
+};

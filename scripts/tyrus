@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cargo_home="${CARGO_HOME:-${HOME}/.cargo}"
+install_dir="${TYRUS_INSTALL_DIR:-${cargo_home}/bin}"
+destination="${install_dir}/tyrus"
+runtime_dir="${TYRUS_RUNTIME_DIR:-${cargo_home}/lib/tyrus}"
+runtime_destination="${runtime_dir}/libtyrus_runtime.a"
+system_runtime_destination="${runtime_dir}/libtyrus_runtime_system.a"
+system_runtime_target_dir="${project_dir}/target/tyrus-system-runtime"
+native_libs_manifest="${project_dir}/target/release/tyrus-native-libs.json"
+debug_native_libs_manifest="${project_dir}/target/debug/tyrus-native-libs.json"
+
+cd "${project_dir}"
+
+echo "==> Building the runtime staticlib for tests"
+# `cargo test` builds the runtime as an rlib and may leave the canonical
+# staticlib untouched. Integration tests compile generated programs against
+# `target/debug/libtyrus_runtime.a`, so refresh it before any test can link a
+# stale ABI after a runtime change or branch switch.
+cargo build --package tyrus-runtime
+
+echo "==> Collecting debug runtime linker arguments"
+native_output="$(mktemp)"
+trap 'rm -f "${native_output}"' EXIT
+cargo rustc --package tyrus-runtime --lib -- --print=native-static-libs > "${native_output}" 2>&1
+cat "${native_output}"
+native_target="$(rustc -vV | awk '/^host: / { print $2 }')"
+python3 scripts/ci/extract_native_static_libs.py "${native_output}" "${debug_native_libs_manifest}" --target "${native_target}"
+rm -f "${native_output}"
+trap - EXIT
+
+echo "==> Running tests"
+test_log="$(mktemp)"
+set +e
+cargo test --workspace 2>&1 | tee "${test_log}"
+test_status=$?
+set -e
+
+read -r tests_passed tests_failed < <(
+    awk '/^test result:/ {p += $4; f += $6} END {print p, f}' "${test_log}"
+)
+rm -f "${test_log}"
+echo "==> Test summary: ${tests_passed} passed, ${tests_failed} failed"
+
+if [ "${test_status}" -ne 0 ]; then
+    exit "${test_status}"
+fi
+
+echo "==> Building in release mode"
+cargo build --release --package tyrus --package tyrus-runtime
+
+echo "==> Collecting runtime linker arguments"
+native_output="$(mktemp)"
+trap 'rm -f "${native_output}"' EXIT
+cargo rustc --release --package tyrus-runtime --lib -- --print=native-static-libs > "${native_output}" 2>&1
+cat "${native_output}"
+native_target="$(rustc -vV | awk '/^host: / { print $2 }')"
+python3 scripts/ci/extract_native_static_libs.py "${native_output}" "${native_libs_manifest}" --target "${native_target}"
+rm -f "${native_output}"
+trap - EXIT
+
+# Sanitizer runtimes interpose libc allocation functions. mimalloc initializes
+# through those same functions, before AddressSanitizer has finished installing
+# its interceptors, so linking it into an instrumented generated program can
+# crash during process startup. Keep a separately built system-allocator
+# staticlib next to the normal runtime for example and external sanitizer runs.
+CARGO_TARGET_DIR="${system_runtime_target_dir}" \
+    cargo rustc --release --package tyrus-runtime --features system-allocator --crate-type staticlib
+
+echo "==> Updating ${destination}"
+mkdir -p "${install_dir}"
+mkdir -p "${runtime_dir}"
+temporary="$(mktemp "${install_dir}/.tyr.XXXXXX")"
+trap 'rm -f "${temporary}"' EXIT
+install -m 755 target/release/tyrus "${temporary}"
+mv -f "${temporary}" "${destination}"
+trap - EXIT
+
+echo "==> Updating ${runtime_destination}"
+runtime_temporary="$(mktemp "${runtime_dir}/.libtyrus_runtime.XXXXXX")"
+trap 'rm -f "${runtime_temporary}"' EXIT
+install -m 644 target/release/libtyrus_runtime.a "${runtime_temporary}"
+mv -f "${runtime_temporary}" "${runtime_destination}"
+trap - EXIT
+
+if [ -f "${native_libs_manifest}" ]; then
+    install -m 644 "${native_libs_manifest}" "${runtime_dir}/tyrus-native-libs.json"
+else
+    rm -f "${runtime_dir}/tyrus-native-libs.json"
+fi
+
+echo "==> Updating ${system_runtime_destination}"
+system_runtime_temporary="$(mktemp "${runtime_dir}/.libtyrus_runtime_system.XXXXXX")"
+trap 'rm -f "${system_runtime_temporary}"' EXIT
+install -m 644 "${system_runtime_target_dir}/release/libtyrus_runtime.a" "${system_runtime_temporary}"
+mv -f "${system_runtime_temporary}" "${system_runtime_destination}"
+trap - EXIT
+
+echo "==> tyrus updated successfully"
+"${destination}" --version
+echo "    Reload the editor to restart any running Language Server."

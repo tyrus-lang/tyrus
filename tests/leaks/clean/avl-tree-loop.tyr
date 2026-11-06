@@ -1,0 +1,25 @@
+// AvlTree insert/contains/len/isEmpty in a 200-iteration loop.
+import { AvlTree } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const t = AvlTree<i32>();
+        t.insert(i);
+        t.insert(i + 1);
+        t.insert(i + 2);
+        t.insert(i + 2);
+        if (t.contains(i + 1)) {
+            total += 1;
+        }
+        if (t.contains(i + 100)) {
+            total += 1;
+        }
+        total += t.len();
+        if (t.isEmpty()) {
+            total += 1;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 800);
+};

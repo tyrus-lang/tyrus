@@ -1,0 +1,24 @@
+[package]
+name = "tyrus-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Parser and semantic analysis for the Tyrus programming language."
+
+[dependencies]
+tyrus-temporal-data = { path = "../tyrus-temporal-data" }
+tyrus-decimal = { path = "../tyrus-decimal" }
+anstyle.workspace = true
+bytesize.workspace = true
+logos.workspace = true
+regex.workspace = true
+tyrus-validators = { path = "../tyrus-validators" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+rustc-hash.workspace = true
+
+[lints]
+workspace = true

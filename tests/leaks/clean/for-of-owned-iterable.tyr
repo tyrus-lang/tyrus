@@ -1,0 +1,53 @@
+// `for (const item of expr)` where `expr` is a fresh, owned temporary (a
+// `Map.keys()`/`.values()` call, most commonly) was a genuine use-after-free,
+// not just a leak: the iterable's own pending ownership registration stayed
+// in the generic pending-result list while the loop body ran, and the loop
+// body's own per-statement cleanup (freeing whatever temporary its own
+// statements left pending) incorrectly swept the *iterable* too, on the
+// very first iteration, well before the loop finished walking it. Every
+// iteration after the first then read through the array's already-freed
+// `data`/`length`, reliably corrupting output and eventually crashing
+// outright once enough other code ran beforehand for the freed memory to be
+// reused. Reproduced originally via `for (const item of stock.keys())`
+// where `stock` is a `Record<string, T>`.
+//
+// A second, independent leak in the same area: a `Record<string, T>`
+// literal (`{ apples: 3 }`, as opposed to `Map()`) was never registered
+// as owned at all, anywhere, `Map()`'s own dispatch site claims itself,
+// but the object-literal-syntax path building the identical native hash
+// table never did. `m[k]`/`stock["key"]` (`IndexAccess` on a map) shared the
+// exact gap `.get()` already had closed: boxing a fresh `V?` that nothing
+// claimed, reached through the operator instead of the method call.
+//
+// Expected output is 5000.
+type Inventory = Record<string, i32>;
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let stock: Inventory = { apples: 3, pears: 5 };
+        stock["bananas"] = 12;
+        stock["apples"] = 4;
+
+        // `m[k]` builds a fresh `V?` box nothing claimed before.
+        const apples: i32? = stock["apples"];
+        if (apples) {
+            total += apples as usize;
+        }
+        // Unbound temporary index-get: never named, swept at end of scope.
+        stock["oranges"];
+
+        // The use-after-free shape: iterating a fresh, owned `.keys()`
+        // array whose loop body itself contains statements (so the generic
+        // per-statement sweep has something to run and, before this fix,
+        // something to wrongly catch).
+        for (const item of stock.keys()) {
+            const quantity: i32? = stock[item];
+            if (quantity) {
+                total += quantity as usize;
+            }
+        }
+    }
+    console.log(total);
+    console.log("assert:", 5000);
+};

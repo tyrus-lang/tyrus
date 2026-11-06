@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+#
+# Every gate a change has to pass, in one command.
+#
+# This is what continuous integration runs, and running it locally before
+# pushing gives the same answer. Keeping the list here rather than in a CI
+# configuration means the two cannot drift: a gate added here is a gate CI
+# picks up, whatever the provider.
+#
+# Usage:
+#   scripts/validate            # everything
+#   scripts/validate --rust     # only the Rust gates (fastest useful subset)
+#   scripts/validate --docs     # only the documentation gates
+#
+# The three leak gates need valgrind and skip themselves when it is missing,
+# so a machine without it still gets every other gate.
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+run_rust=1
+run_docs=1
+case "${1:-}" in
+    --rust) run_docs=0 ;;
+    --docs) run_rust=0 ;;
+    "") ;;
+    *)
+        echo "usage: scripts/validate [--rust|--docs]" >&2
+        exit 2
+        ;;
+esac
+
+failures=()
+
+step() {
+    local name="$1"
+    shift
+    echo "==> ${name}"
+    if "$@"; then
+        return 0
+    fi
+    # Keep going so one run reports every failing gate instead of only the
+    # first, which is what makes the output useful in CI.
+    failures+=("${name}")
+    return 0
+}
+
+if [[ ${run_rust} -eq 1 ]]; then
+    step "formatting"        cargo fmt --all -- --check
+    step "lints"             cargo clippy --workspace --all-targets -- -D warnings
+    step "types"             cargo check --workspace --all-targets
+    # Includes `check_implies_codegen`, which holds the `tyrus check` contract:
+    # what the front end approves the backend must emit, and a restriction the
+    # backend enforces alone fails the build of whoever introduced it.
+    step "tests"             cargo test --workspace
+    step "editor artifacts"  cargo run -q -p xtask -- --check
+    # Skips itself when valgrind is absent, so this stays runnable anywhere.
+    step "leaks"             ./scripts/leak-check
+    # `leak-check` leaves the filesystem cases to this one, so the full gate
+    # still covers the whole corpus even though a day-to-day run does not.
+    step "leaks (fs)"        ./scripts/leak-check-fs
+    step "leaks (repl)"      ./scripts/leak-check-repl
+    step "leaks (jit)"       ./scripts/leak-check-jit
+fi
+
+if [[ ${run_docs} -eq 1 ]]; then
+    step "docs parity"       npm run docs:check
+    step "docs build"        npm run docs:build
+fi
+
+if [[ ${#failures[@]} -gt 0 ]]; then
+    echo
+    echo "FAILED: ${failures[*]}" >&2
+    exit 1
+fi
+
+echo
+echo "All gates passed."

@@ -1,0 +1,31 @@
+// Found running the complete examples aggregator under valgrind: `process.
+// argv` (`emit_process_argv`) builds a fresh `string[]` via
+// `tyrus_process_argv` and returned it unclaimed, no
+// `record_owned_native_result` anywhere, leaking every call. Closed by
+// registering the array result right after loading it out of its own
+// temporary slot, the same place any other allocating native call already
+// claims itself.
+//
+// Two sibling gaps in the same area, `process.env.SOME_VAR`
+// (`ExprKind::FieldAccess` on the `process.env` namespace, calling
+// `emit_env_get` and returning its fresh `tyrus_env_get_str` result with no
+// registration at all) and `const { KEY } = process.env;`
+// (`StmtKind::ObjectDestructure`, which shares the same runtime call but
+// binds each getter's result straight into its own alloca via `store_var`,
+// bypassing the ownership-claiming path a normal `VarDecl` goes through),
+// were found and closed the same way (registering the field-access result,
+// and `mark_owned_synchronous_value`-claiming each destructured `Str`
+// binding). Neither is exercised in this file: `scripts/leak-check` builds
+// each case in a throwaway project with no `.env`, and this project's env
+// schema is declared entirely by a `.env` file's own `@type(...)` comments,
+// a case that reads `process.env` here would fail to build for having no
+// declared schema, not for anything ownership-related. Both fixes were
+// confirmed clean by hand, in a scratch project with a real `.env`, before
+// landing.
+//
+// Expected output is true.
+const main = (): void => {
+    const args: string[] = process.argv;
+    console.log(args.length >= 1);
+    console.log("assert:", true);
+};

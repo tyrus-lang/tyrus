@@ -1,0 +1,22 @@
+// centroidDecomposition in a 200-iteration loop, with a rebind, unbound
+// temporaries, a bound depth result, and a parentOf `usize?` box coalesced
+// through `??` each iteration.
+import { centroidDecomposition } from "tyrus:algorithm";
+
+const main = (): void => {
+    const adj: usize[][] = [[1, 2], [0, 3, 4], [0, 5, 6], [1], [1], [2], [2]];
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let tree = centroidDecomposition(adj);
+        total += tree.depth(3);
+        total += tree.parentOf(3) ?? 0;
+        tree = centroidDecomposition(adj);
+        total += tree.depth(5);
+        total += centroidDecomposition(adj).depth(0);
+        total += centroidDecomposition([[1], [0, 2], [1]]).parentOf(1) ?? 0;
+        const bound: usize = centroidDecomposition(adj).depth(6);
+        total += bound;
+    }
+    console.log(total);
+    console.log("assert:", 1400);
+};

@@ -1,0 +1,46 @@
+==================
+Protected export of a declaration
+==================
+
+export protect const answer = 42;
+
+---
+
+(source_file
+  (export_statement
+    (declaration
+      (variable_declaration
+        name: (identifier)
+        value: (number)))))
+
+==================
+Protected export clause
+==================
+
+export protect { first, second as alias };
+
+---
+
+(source_file
+  (export_statement
+    (export_clause
+      (export_specifier
+        name: (identifier))
+      (export_specifier
+        name: (identifier)
+        alias: (identifier)))))
+
+==================
+A plain export is unaffected
+==================
+
+export const shown = 1;
+
+---
+
+(source_file
+  (export_statement
+    (declaration
+      (variable_declaration
+        name: (identifier)
+        value: (number)))))

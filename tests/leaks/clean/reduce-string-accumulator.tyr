@@ -1,0 +1,60 @@
+// `words.reduce((acc, w) => acc.concat(w), "")` built a fresh string on
+// every call, every synchronous closure return already clones whenever the
+// return type is owned-value-supported, `Str` included, so even a bare
+// `(acc, w) => acc` clones just as much as a `concat` call does, but the
+// loop discarded every intermediate accumulator except by coincidence, and
+// never claimed the final result at all.
+//
+// The loop body compiles exactly once and runs at runtime for however many
+// elements the array holds, so a compile-time `bool` cannot track whether
+// the accumulator is currently owned; this needed a runtime bit, read and
+// rewritten on each iteration. The final value's ownership is only known at
+// runtime too (zero iterations passes the seed straight through), so it is
+// handed to the caller through the same conditionally-owned mechanism a
+// per-path-owned user function return already uses.
+//
+// Closing this also surfaced a second, unrelated bug (a compiler panic, not
+// a leak): `emit_arrow_fn`/`emit_async_arrow_fn` were missing three scope
+// stacks from what they save and restore around compiling a closure's body
+// in isolation. Reassigning a mutable `string` bound from *any* call that
+// compiles a closure (not specific to `reduce`) desynced those stacks and
+// crashed the next scope-exit cleanup with an index-out-of-bounds panic.
+// Exercised below via the mutable rebind case.
+//
+// Expected output is 6400.
+const main = (): void => {
+    const words: string[] = ["a", "b", "c"];
+    const empty: string[] = [];
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const joined: string = words.reduce((acc: string, w: string): string => acc.concat(w), "");
+        const joinedOwnedSeed: string = words.reduce((acc: string, w: string): string => acc.concat(w), "X".toUpperCase());
+        const identity: string = words.reduce((acc: string, w: string): string => acc, "seed");
+        const plusJoined: string = words.reduce((acc: string, w: string): string => acc + w, "");
+        const rjoined: string = words.reduceRight((acc: string, w: string): string => acc.concat(w), "");
+        total += joined.length + joinedOwnedSeed.length + identity.length + plusJoined.length + rjoined.length;
+
+        // Zero iterations: the seed passes straight through untouched.
+        const untouched: string = empty.reduce((acc: string, w: string): string => acc.concat(w), "seed2");
+        const untouchedOwned: string = empty.reduce((acc: string, w: string): string => acc.concat(w), "y".toUpperCase());
+        total += untouched.length + untouchedOwned.length;
+
+        // Unbound temporary: never named, swept at end of scope.
+        words.reduce((acc: string, w: string): string => acc.concat(w), "");
+
+        // Nested: a reduce result used as another reduce's seed.
+        const nested: string = words.reduce(
+            (acc: string, w: string): string => acc.concat(w),
+            words.reduce((acc: string, w: string): string => acc.concat(w), "")
+        );
+        total += nested.length;
+
+        // Mutable rebind, also the regression case for the scope-stack
+        // desync panic described above.
+        let acc3: string = words.reduce((acc: string, w: string): string => acc.concat(w), "");
+        acc3 = words.reduce((acc: string, w: string): string => acc.concat(w), "");
+        total += acc3.length;
+    }
+    console.log(total);
+    console.log("assert:", 6400);
+};

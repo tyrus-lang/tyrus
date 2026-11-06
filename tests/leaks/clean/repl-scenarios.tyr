@@ -1,0 +1,10 @@
+// REPL scenarios: variables, expressions, console.log, functions, each looped 200x.
+const main = (): void => {
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const x: i32 = i;
+        const y: i32 = i * 2;
+        const z: i32 = x + y;
+        console.log(z);
+        console.log("assert:", i * 3);
+    }
+};

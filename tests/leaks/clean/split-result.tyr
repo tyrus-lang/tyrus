@@ -1,0 +1,11 @@
+// `split` allocates the array buffer and every element string. It used to leak
+// all of it (24 bytes per iteration) because it is the one string method that
+// hands back an array, and the ownership recorded for string methods described
+// a `string` rather than a `string[]`.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += "a,b,c".split(",").length;
+    }
+    console.log(total);
+};

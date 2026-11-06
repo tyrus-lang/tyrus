@@ -1,0 +1,75 @@
+==================
+Type intersection of named operands
+==================
+
+type Person = Age & Contact;
+
+---
+
+(source_file
+  (declaration
+    (type_alias_declaration
+      name: (identifier)
+      value: (intersection_type
+        (type_identifier
+          (type_identifier))
+        (type_identifier
+          (type_identifier))))))
+
+==================
+Type intersection with an inline object operand
+==================
+
+type Employee = { title: string; } & Age;
+
+---
+
+(source_file
+  (declaration
+    (type_alias_declaration
+      name: (identifier)
+      value: (intersection_type
+        (object_type
+          (property_signature
+            name: (identifier)
+            type: (primitive_type)))
+        (type_identifier
+          (type_identifier))))))
+
+==================
+Type intersection chaining more than two operands
+==================
+
+type Entry = Age & { id: u64; } & Contact;
+
+---
+
+(source_file
+  (declaration
+    (type_alias_declaration
+      name: (identifier)
+      value: (intersection_type
+        (type_identifier
+          (type_identifier))
+        (intersection_type
+          (object_type
+            (property_signature
+              name: (identifier)
+              type: (primitive_type)))
+          (type_identifier
+            (type_identifier)))))))
+
+==================
+A leading ampersand is still a reference type
+==================
+
+type Handle = &i32;
+
+---
+
+(source_file
+  (declaration
+    (type_alias_declaration
+      name: (identifier)
+      value: (reference_type
+        (primitive_type)))))

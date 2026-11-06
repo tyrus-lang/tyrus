@@ -1,0 +1,23 @@
+// An async closure bound to a name, capturing a value.
+//
+// An async closure's environment has no reference-count header, its lifetime
+// is managed by the async state machine, not the synchronous count, so it is
+// released through its own destructor, not through the runtime's closure
+// release. Sending it through the reference-count path wrote a decrement over
+// what it took to be the count and was actually a capture: an invalid write and
+// a leak.
+//
+// This guards that split. It passed the whole test suite while broken, because
+// no test bound an async closure with a capture, then aborted only under
+// valgrind, which is why it earns a case here.
+//
+// Expected output is 6.
+const main = async (): Promise<void> => {
+    const base: i32 = 5;
+    const increment = async (): Promise<i32> => {
+        return base + 1;
+    };
+    const result: i32 = await increment();
+    console.log(result);
+    console.log("assert:", 6);
+};

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build the optimized native runtime and verify that secure erasure remains a
+# volatile write followed by a compiler fence. This is intentionally separate
+# from Rust unit tests because only the optimized LLVM IR can expose a future
+# dead-store-elimination regression.
+cargo rustc -p tyrus-runtime --release --lib -- --emit=llvm-ir
+
+ir_file="$(rg --files target/release/deps -g 'tyrus_runtime-*.ll' | head -n 1)"
+if [[ -z "${ir_file}" ]]; then
+    echo "error: LLVM IR for tyrus-runtime was not produced" >&2
+    exit 1
+fi
+
+zeroize_ir="$(awk '/define .*@tyrus_memory_zeroize_u8_array/{inside=1} inside{print} inside && /^}/{exit}' "${ir_file}")"
+if [[ -z "${zeroize_ir}" ]]; then
+    echo "error: tyrus_memory_zeroize_u8_array is missing from optimized LLVM IR" >&2
+    exit 1
+fi
+
+if ! rg -q 'volatile|write_volatile' <<<"${zeroize_ir}"; then
+    echo "error: optimized zeroize IR no longer contains a volatile write" >&2
+    exit 1
+fi
+
+if ! rg -q 'compiler_fence|fence ' <<<"${zeroize_ir}"; then
+    echo "error: optimized zeroize IR no longer contains a compiler fence" >&2
+    exit 1
+fi
+
+echo "zeroize LLVM IR retains volatile erasure and compiler fence"

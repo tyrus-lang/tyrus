@@ -1,0 +1,13 @@
+// `map`, `filter` and friends return a new array whose buffer the caller owns.
+// This covers the temporary form, where the result is consumed on the spot.
+// The form that binds the result to a name is still open: see
+// `known/array-bound-to-a-name.tyr`.
+const main = (): void => {
+    const numbers: i32[] = [1, 2, 3];
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += numbers.map((value: i32): i32 => value * 2).length;
+        total += numbers.filter((value: i32): boolean => value > 2).length;
+    }
+    console.log(total);
+};

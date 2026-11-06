@@ -1,0 +1,82 @@
+// Two defects, one file, because the first was hiding the second.
+//
+// Cancelling a request aborts the task performing it, and an aborted task's
+// future is dropped at whatever `await` it was sitting on. The release of the
+// Promise reference that task held was written after the await, so it never
+// ran: the Promise, its error and its waiter list stayed allocated for the life
+// of the process, 128 bytes and change for every cancelled request.
+//
+// Fixing that exposed what the leak had been covering for. A task recorded the
+// Promise it was suspended on as a bare pointer it did not own, which was sound
+// only while the frame that stored the Promise still held it. Cancellation
+// breaks exactly that: the frame is resumed through the failure path *without*
+// the dependency settling, so it releases the Promise and moves on while the
+// task's pointer still names it. Never releasing the other reference kept that
+// pointer pointing at something; releasing it turned the dangling read into a
+// use-after-free. The task owns the reference now.
+//
+// The requests are cancelled together rather than one after another because the
+// second defect is a race, and one cancellation at a time never lost it: four
+// at once crashed seventeen runs in twenty before the fix, and the sequential
+// form crashed none.
+import { createRouter, fetch, HttpError, HttpReply, HttpRouter, HttpServer, HttpStatus, ServerOptions, TextBody } from "tyrus:http";
+import { cancel, sleep, sleepAsync } from "tyrus:task";
+
+async function downloadOnce(url: string): Promise<void> {
+    try {
+        const response = await fetch.get(url);
+        console.log("the request was not stopped");
+    } catch (error: HttpError) {
+        console.log("the request failed instead of being cancelled");
+    }
+}
+
+async function cancelFourRequests(url: string): Promise<i32> {
+    const first: Promise<void> = downloadOnce(url);
+    const second: Promise<void> = downloadOnce(url);
+    const third: Promise<void> = downloadOnce(url);
+    const fourth: Promise<void> = downloadOnce(url);
+    await sleepAsync(150);
+    let cancelled: i32 = 0;
+    if (cancel(first, "stop")) {
+        cancelled += 1;
+    }
+    if (cancel(second, "stop")) {
+        cancelled += 1;
+    }
+    if (cancel(third, "stop")) {
+        cancelled += 1;
+    }
+    if (cancel(fourth, "stop")) {
+        cancelled += 1;
+    }
+    // Long enough for every abandoned frame to finish unwinding, so what this
+    // measures is what the program leaves behind and not what it is still
+    // holding on its way out.
+    await sleepAsync(200);
+    return cancelled;
+}
+
+const main = async (): Promise<void> => {
+    const app: HttpRouter = createRouter();
+    app.get("/slow", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            // Held open long enough that every request is still in flight when
+            // it is cancelled, which is what makes the abort fire on every run
+            // rather than only when the client loses the race.
+            sleep(1000);
+            reply.status(HttpStatus.Ok).send("late");
+        },
+    });
+    let cancelled: i32 = 0;
+    const server = app.listen(0, { host: "127.0.0.1" }) onfail {
+        console.log(`the server did not start: ${server.code}`);
+        return;
+    };
+        const url: string = `http://127.0.0.1:${server.port()}/slow`;
+        cancelled = await cancelFourRequests(url);
+        await server.close();
+    console.log(cancelled);
+    console.log("assert:", 4);
+};

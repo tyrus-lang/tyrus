@@ -1,0 +1,20 @@
+// `onfail` over a `Result` in a `void` function: reaching the end of the
+// handler returns, and both the allocated error and the success are released.
+function load(ok: boolean): Result<string[], string> {
+    if (ok) {
+        const names: string[] = [`red ${1}`, `blue ${2}`];
+        return Ok(names);
+    }
+    return Err(`failed ${3}`);
+}
+
+function show(ok: boolean): void {
+    const names = load(ok) onfail console.log("handled", names);
+    console.log("loaded", names.length, names[0]);
+}
+
+function main(): void {
+    for (let round = 0; round < 10; round += 1) {
+        show(round % 2 === 0);
+    }
+}

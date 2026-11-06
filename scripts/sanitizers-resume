@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# Resumes scripts/sanitizers after a failed integration test target.
+#
+# Usage:
+#   scripts/sanitizers-resume target/sanitizers/reports/<run>
+#
+# It starts at the earliest failed test in the first failed integration target,
+# then runs every later integration target and the remaining sanitizer stages.
+# The original sanitizer script and its report are left untouched.
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+if [[ $# -ne 1 || $1 == "-h" || $1 == "--help" ]]; then
+    echo "Usage: scripts/sanitizers-resume REPORT_DIR" >&2
+    exit 2
+fi
+report_dir="$1"
+if [[ ${report_dir} != /* ]]; then
+    report_dir="${project_dir}/${report_dir}"
+fi
+[[ -d ${report_dir} ]] || { echo "Report directory does not exist: ${report_dir}" >&2; exit 2; }
+integration_log="${report_dir}/tyrus-integration.log"
+[[ -f ${integration_log} ]] || {
+    echo "Integration log not found: ${integration_log}" >&2
+    exit 2
+}
+
+toolchain="${TYRUS_SANITIZER_TOOLCHAIN:-nightly}"
+target_dir="${TYRUS_SANITIZER_TARGET_DIR:-${project_dir}/target/sanitizers}"
+test_stack_size="${TYRUS_SANITIZER_TEST_STACK:-8388608}"
+[[ ${test_stack_size} =~ ^[1-9][0-9]*$ ]] || {
+    echo "TYRUS_SANITIZER_TEST_STACK must be a positive integer byte count." >&2
+    exit 2
+}
+target="${TYRUS_SANITIZER_TARGET:-}"
+if [[ -z ${target} ]]; then
+    target="$(rustup run "${toolchain}" rustc -vV | sed -n 's/^host: //p')"
+fi
+[[ -n ${target} ]] || { echo "Could not determine the Rust target." >&2; exit 1; }
+
+mapfile -t failed_entries < <(python3 - "${integration_log}" <<'PY'
+import re
+import sys
+
+current_target = None
+collecting_failures = False
+failed_entries = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    running = re.search(r"Running tests/([A-Za-z0-9_-]+)\.rs ", line)
+    if running:
+        current_target = running.group(1)
+        collecting_failures = False
+        continue
+    if line.startswith("failures:"):
+        collecting_failures = True
+        continue
+    if line.startswith("test result:"):
+        collecting_failures = False
+        continue
+    if collecting_failures and current_target:
+        failed_name = re.fullmatch(r"\s{4}([A-Za-z0-9_]+)\s*", line.rstrip("\n"))
+        if failed_name:
+            failed_entries.append(f"{current_target}:{failed_name.group(1)}")
+
+for entry in dict.fromkeys(failed_entries):
+    print(entry)
+PY
+)
+[[ ${#failed_entries[@]} -gt 0 ]] || {
+    echo "No failed integration tests were found in ${integration_log}." >&2
+    exit 1
+}
+failed_target="${failed_entries[0]%%:*}"
+
+run_stamp="$(date -u +%Y%m%d-%H%M%S)"
+resume_dir="${target_dir}/reports/resume-${run_stamp}-$$"
+mkdir -p "${resume_dir}"
+
+if [[ -z ${ASAN_SYMBOLIZER_PATH:-} ]]; then
+    for candidate in llvm-symbolizer-23 llvm-symbolizer llvm-symbolizer-18 llvm-symbolizer-17; do
+        if command -v "${candidate}" >/dev/null 2>&1; then
+            ASAN_SYMBOLIZER_PATH="$(command -v "${candidate}")"
+            break
+        fi
+    done
+fi
+if [[ -n ${ASAN_SYMBOLIZER_PATH:-} ]]; then
+    export ASAN_SYMBOLIZER_PATH
+fi
+
+RUSTFLAGS="${RUSTFLAGS:-} -Zsanitizer=address"
+ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:halt_on_error=1}"
+LSAN_OPTIONS="${LSAN_OPTIONS:-halt_on_error=1}"
+if [[ ${ASAN_OPTIONS} != *log_path=* ]]; then
+    ASAN_OPTIONS="${ASAN_OPTIONS}:log_path=${resume_dir}/address"
+fi
+if [[ ${LSAN_OPTIONS} != *log_path=* ]]; then
+    LSAN_OPTIONS="${LSAN_OPTIONS}:log_path=${resume_dir}/leak"
+fi
+TYRUS_LINK_ADDRESS_SANITIZER=1
+CARGO_TARGET_DIR="${target_dir}"
+export RUSTFLAGS ASAN_OPTIONS LSAN_OPTIONS TYRUS_LINK_ADDRESS_SANITIZER CARGO_TARGET_DIR
+
+run_step() {
+    local step_name="$1"
+    shift
+    set +e
+    "$@" 2>&1 | tee "${resume_dir}/${step_name}.log"
+    local status=${PIPESTATUS[0]}
+    set -e
+    return "${status}"
+}
+
+sanitizer_cargo=(cargo "+${toolchain}" test -Zbuild-std --target "${target}")
+sanitizer_runtime_cargo=("${sanitizer_cargo[@]}" --features tyrus-runtime/system-allocator)
+
+echo "==> Resuming sanitizer run at ${failed_target}"
+echo "    source report: ${report_dir}"
+echo "    target:        ${target}"
+echo "    resume logs:   ${resume_dir}"
+
+run_step runtime-build cargo "+${toolchain}" build -Zbuild-std --target "${target}" --package tyrus-runtime --features system-allocator
+
+list_log="${resume_dir}/${failed_target}-list.log"
+run_step "${failed_target}-list" "${sanitizer_runtime_cargo[@]}" --package tyrus --test "${failed_target}" -- --list
+mapfile -t test_names < <(sed -nE 's/^([A-Za-z0-9_]+): test$/\1/p' "${list_log}")
+[[ ${#test_names[@]} -gt 0 ]] || {
+    echo "Could not read the test list for '${failed_target}' from ${list_log}." >&2
+    exit 1
+}
+
+declare -A failing_names=()
+for entry in "${failed_entries[@]}"; do
+    [[ ${entry%%:*} == "${failed_target}" ]] && failing_names["${entry#*:}"]=1
+done
+found_first_failure=0
+for name in "${test_names[@]}"; do
+    if [[ -n ${failing_names[${name}]+present} ]]; then
+        found_first_failure=1
+        break
+    fi
+done
+[[ ${found_first_failure} -eq 1 ]] || {
+    echo "The failed test was not present in '${failed_target}' test listing." >&2
+    exit 1
+}
+
+failed=0
+echo "==> Resuming ${failed_target} at its earliest failed test"
+found_first_failure=0
+for name in "${test_names[@]}"; do
+    if [[ -n ${failing_names[${name}]+present} ]]; then
+        found_first_failure=1
+    fi
+    [[ ${found_first_failure} -eq 1 ]] || continue
+    echo "==> ${failed_target}::${name}"
+    if ! RUST_MIN_STACK="${test_stack_size}" RUST_TEST_THREADS=1 run_step "${failed_target}-${name}" \
+        "${sanitizer_runtime_cargo[@]}" --package tyrus --test "${failed_target}" "${name}" -- --exact; then
+        failed=1
+    fi
+done
+
+integration_targets=()
+for test_file in tests/*.rs; do
+    [[ -e ${test_file} ]] || continue
+    test_name="${test_file##*/}"
+    [[ ${test_name} == test_runner.rs ]] && continue
+    integration_targets+=("${test_name%.rs}")
+done
+past_failed_target=0
+for test_target in "${integration_targets[@]}"; do
+    if [[ ${test_target} == "${failed_target}" ]]; then
+        past_failed_target=1
+        continue
+    fi
+    [[ ${past_failed_target} -eq 1 ]] || continue
+    echo "==> Continuing integration target ${test_target}"
+    if ! RUST_MIN_STACK="${test_stack_size}" run_step "integration-${test_target}" \
+        "${sanitizer_runtime_cargo[@]}" --package tyrus --test "${test_target}"; then
+        failed=1
+    fi
+done
+
+if [[ -e tests/test_runner.rs ]]; then
+    echo "==> Running test-runner stage"
+    if ! RUST_MIN_STACK="${test_stack_size}" RUST_TEST_THREADS=1 run_step test-runner \
+        "${sanitizer_runtime_cargo[@]}" --package tyrus --test test_runner; then
+        failed=1
+    fi
+fi
+
+echo "==> Running remaining workspace stage"
+if ! run_step workspace "${sanitizer_runtime_cargo[@]}" --workspace --exclude tyrus --exclude tyrus-codegen; then
+    failed=1
+fi
+
+if [[ ${failed} -ne 0 ]]; then
+    echo "Sanitizer continuation found failures. Logs are in: ${resume_dir}" >&2
+    exit 1
+fi
+echo "Sanitizer continuation passed. Logs are in: ${resume_dir}"

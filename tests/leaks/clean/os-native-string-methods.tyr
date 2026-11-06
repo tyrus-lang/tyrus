@@ -1,0 +1,32 @@
+// Every `tyrus:os` function that returns `string` (`hostname`, `release`,
+// `systemName`, `locale`, `language`) allocates through
+// `crate::strings::alloc_string` and is registered via
+// `record_owned_native_result(result, Type::Str)` in
+// `crates/tyrus-codegen/src/expressions.rs`, the same mechanism already
+// covered by `fs-read-file-sync-owned-and-resolved-path.tyr`. This file
+// exercises that path for the new module: the loop case, an unbound
+// temporary, a bound name, and a rebind. `EOL` and `platform`/`arch` are not
+// covered here, `EOL` is a compile-time global constant (never heap
+// allocated) and `platform`/`arch` return a plain `i32` enum ordinal.
+import { hostname, release, systemName, locale, language } from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        console.log(hostname().length);
+
+        let name: string = hostname();
+        total += name.length;
+        name = release();
+        total += name.length;
+
+        const kind: string = systemName();
+        total += kind.length;
+
+        let loc: string = locale();
+        total += loc.length;
+        loc = language();
+        total += loc.length;
+    }
+    console.log(total);
+};

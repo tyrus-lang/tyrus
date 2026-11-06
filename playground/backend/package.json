@@ -1,0 +1,31 @@
+{
+  "name": "tyrus-playground-backend",
+  "version": "0.1.0",
+  "description": "Backend API for Tyrus Playground",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/mongodb": "^9.0.0",
+    "@fastify/rate-limit": "^11.2.0",
+    "fastify": "^5.0.0",
+    "mongodb": "^6.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "oxlint": "^1.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^7.0.0",
+    "vitest": "^2.1.0"
+  }
+}
