@@ -201,8 +201,15 @@ fn emit_runtime_link_args(objects: &[std::path::PathBuf], out_dir: &std::path::P
             println!("cargo:rustc-link-arg-tests=/DEF:{}", exports.display());
         }
     } else if target_os == "macos" {
-        println!("cargo:rustc-link-arg-bins=-Wl,-multiply_defined,suppress");
-        println!("cargo:rustc-link-arg-tests=-Wl,-multiply_defined,suppress");
+        // Undefined roots retain the C ABI while archive members remain lazy.
+        // Forcing every member duplicates native dependencies also linked by Cargo.
+        for symbol in runtime_abi_symbols(objects)
+            .unwrap_or_else(|error| panic!("failed to inspect JIT runtime symbols: {error}"))
+        {
+            for target in ["bins", "tests"] {
+                println!("cargo:rustc-link-arg-{target}=-Wl,-u,{symbol}");
+            }
+        }
         if let Some(exports) = write_runtime_exports(out_dir, objects)
             .unwrap_or_else(|error| panic!("failed to prepare JIT runtime exports: {error}"))
         {
@@ -286,9 +293,9 @@ fn main() {
 
     // The JIT engines resolve runtime calls through host-process symbol lookup,
     // but the tyrus-runtime C ABI functions (tyrus_*) are not referenced by
-    // Rust code, so the linker may discard them from the rlib. Extract every
-    // object from the runtime staticlib and link it directly, then export the
-    // C ABI symbols using the host linker's platform-specific export mechanism.
+    // Rust code, so the linker may discard them from the rlib. Inspect the
+    // staticlib members to export the C ABI. Mach-O retains those symbols as
+    // undefined roots and loads archive members lazily to avoid duplicate dependencies.
     if let Some(ref staticlib) = find_staticlib() {
         // Belt and braces with the source watch above: this catches a
         // staticlib that changed without its sources changing, such as a
@@ -347,18 +354,26 @@ fn main() {
                 .collect();
             entries.sort();
             emit_runtime_link_args(&entries, std::path::Path::new(&out_dir));
-            for o in &entries {
-                println!("cargo:rustc-link-arg-bins={}", o.display());
-                println!("cargo:rustc-link-arg-tests={}", o.display());
-                o_count += 1;
-            }
             if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+                println!("cargo:rustc-link-arg-bins={}", staticlib.display());
+                println!("cargo:rustc-link-arg-tests={}", staticlib.display());
                 for argument in macos_runtime_native_link_args() {
                     println!("cargo:rustc-link-arg-bins={argument}");
                     println!("cargo:rustc-link-arg-tests={argument}");
                 }
+                println!(
+                    "cargo:warning=linked the runtime archive lazily for JIT symbol resolution"
+                );
+            } else {
+                for o in &entries {
+                    println!("cargo:rustc-link-arg-bins={}", o.display());
+                    println!("cargo:rustc-link-arg-tests={}", o.display());
+                    o_count += 1;
+                }
+                println!(
+                    "cargo:warning=linked {o_count} runtime objects for JIT symbol resolution"
+                );
             }
-            println!("cargo:warning=linked {o_count} runtime objects for JIT symbol resolution");
         }
     } else {
         // Watch the places the staticlib *would* be, so that the run which

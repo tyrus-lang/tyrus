@@ -142,6 +142,10 @@ jobs:
             echo "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=$prefix/bin/clang" >> "$GITHUB_ENV"
             echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld -C link-arg=--ld-path=$lld" >> "$GITHUB_ENV"
           fi
+      - name: Verify Mach-O runtime archive linking before compiling Rust
+        if: runner.os == 'macOS'
+        shell: bash
+        run: python -m unittest discover -s scripts/ci -p 'test_macos_runtime_archive.py'
       - name: Install LLVM on Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -165,6 +169,7 @@ jobs:
         shell: pwsh
         env:
           CARGO_CFG_TARGET_ENV: msvc
+          CARGO_CFG_TARGET_FEATURE: crt-static
         run: |
           $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
           if (-not $vcpkgRoot) { throw 'VCPKG_INSTALLATION_ROOT is required to install LLVM release dependencies.' }
@@ -173,20 +178,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not install the LLVM release dependencies with vcpkg.' }
           $dependencyLib = Join-Path $vcpkgRoot 'installed/x64-windows-static/lib'
           $llvmLib = Join-Path $env:LLVM_SYS_231_PREFIX 'lib'
-          foreach ($dependency in @(
-            @{ Target = 'zs.lib'; Candidates = @('zlib.lib', 'zs.lib') },
-            @{ Target = 'zstd_static.lib'; Candidates = @('zstd.lib', 'zstd_static.lib') },
-            @{ Target = 'libxml2s.lib'; Candidates = @('libxml2.lib', 'libxml2s.lib') }
-          )) {
-            $source = $dependency.Candidates | ForEach-Object { Join-Path $dependencyLib $_ } | Where-Object { Test-Path $_ } | Select-Object -First 1
-            if (-not $source) { throw "Missing $($dependency.Target) equivalent in $dependencyLib." }
-            Copy-Item $source (Join-Path $llvmLib $dependency.Target) -Force
-          }
+          python scripts/ci/copy_windows_llvm_dependencies.py $dependencyLib $llvmLib
+          if ($LASTEXITCODE -ne 0) { throw 'Could not prepare the LLVM dependency library names.' }
           $probe = Join-Path $env:RUNNER_TEMP 'tyrus-llvm-link-check.exe'
           rustc --edition=2024 crates/tyrus-codegen/build.rs -o $probe
           if ($LASTEXITCODE -ne 0) { throw 'Could not compile the LLVM link dependency check.' }
-          & $probe
-          if ($LASTEXITCODE -ne 0) { throw 'LLVM link dependencies are unavailable; inspect the missing library above.' }
+          $probeLog = Join-Path $env:RUNNER_TEMP 'tyrus-llvm-link-check.log'
+          & $probe *> $probeLog
+          $probeExitCode = $LASTEXITCODE
+          Get-Content $probeLog
+          if ($probeExitCode -ne 0) { throw "LLVM link dependency check exited with $probeExitCode; full output is shown above from $probeLog." }
       - name: Install Linux native development files
         if: runner.os == 'Linux'
         run: |
@@ -312,7 +313,7 @@ jobs:
           test "$(tail -n 1 "$run_stderr")" = 'native release stderr'
           "$GITHUB_WORKSPACE/target/release/tyrus" build
           native_stderr="$RUNNER_TEMP/tyrus-native-stderr.txt"
-          output="$(cd "$project/nested" && "$project/target/tyrus-release-smoke" 2>"$native_stderr")"
+          output="$(cd "$project/nested" && "$project/target/debug/tyrus-release-smoke" 2>"$native_stderr")"
           expected="$(printf 'native release smoke\nnested cwd smoke\nnested path\n2\n2\ndisk usage ok')"
           test "$output" = "$expected"
           test "$(cat "$native_stderr")" = 'native release stderr'
@@ -331,7 +332,7 @@ jobs:
           test ! -s run.stdout
           "$GITHUB_WORKSPACE/target/release/tyrus" build
           set +e
-          "$exit_project/target/tyrus-exit-smoke" >binary.stdout 2>binary.stderr
+          "$exit_project/target/debug/tyrus-exit-smoke" >binary.stdout 2>binary.stderr
           binary_status=$?
           set -e
           test "$binary_status" -eq 23
@@ -402,7 +403,7 @@ jobs:
           Push-Location (Join-Path $project 'nested')
           try {
             $nativeStderr = Join-Path $env:RUNNER_TEMP 'tyrus-native-stderr.txt'
-            $output = & (Join-Path $project 'target/tyrus-release-smoke.exe') 2> $nativeStderr
+            $output = & (Join-Path $project 'target/debug/tyrus-release-smoke.exe') 2> $nativeStderr
             if ($LASTEXITCODE -ne 0) { throw 'Generated native program failed.' }
             if (($output -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected smoke output: $output" }
             if ((Get-Content -Raw $nativeStderr).Trim() -ne 'native release stderr') { throw 'Generated program did not preserve stderr separately.' }
@@ -418,7 +419,7 @@ jobs:
           }
           Push-Location (Join-Path $project 'nested')
           try {
-            $releaseOutput = & (Join-Path $project 'target/tyrus-release-smoke.exe')
+            $releaseOutput = & (Join-Path $project 'target/release/tyrus-release-smoke.exe')
             if ($LASTEXITCODE -ne 0) { throw 'Generated release program failed.' }
             if (($releaseOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected release smoke output: $releaseOutput" }
           } finally {
@@ -442,7 +443,7 @@ jobs:
           }
           $binaryStdout = Join-Path $exitProject 'binary.stdout'
           $binaryStderr = Join-Path $exitProject 'binary.stderr'
-          & (Join-Path $exitProject 'target/tyrus-exit-smoke.exe') > $binaryStdout 2> $binaryStderr
+          & (Join-Path $exitProject 'target/debug/tyrus-exit-smoke.exe') > $binaryStdout 2> $binaryStderr
           if ($LASTEXITCODE -ne 23) { throw "Generated binary returned exit code $LASTEXITCODE instead of 23." }
           if ((Get-Item $binaryStdout).Length -ne 0) { throw 'Generated binary wrote unexpected data to stdout before process.exit(23).' }
           if ((Get-Item $binaryStderr).Length -ne 0) { throw 'Generated binary wrote unexpected data to stderr before process.exit(23).' }
@@ -526,17 +527,17 @@ jobs:
           "$installed/bin/tyrus" run
           "$installed/bin/tyrus" build --release
           package_stderr="$RUNNER_TEMP/tyrus-package-stderr.txt"
-          output="$(cd "$package_project/nested" && "$package_project/target/tyrus-release-smoke" 2>"$package_stderr")"
+          output="$(cd "$package_project/nested" && "$package_project/target/release/tyrus-release-smoke" 2>"$package_stderr")"
           expected="$(printf 'native release smoke\nnested cwd smoke\nnested path\n2\n2\ndisk usage ok')"
           test "$output" = "$expected"
           test "$(cat "$package_stderr")" = 'native release stderr'
           "$installed/bin/tyrus" build --release --pgo-generate
-          output="$(cd "$package_project/nested" && "$package_project/target/tyrus-release-smoke" 2>"$package_stderr")"
+          output="$(cd "$package_project/nested" && "$package_project/target/release/tyrus-release-smoke" 2>"$package_stderr")"
           test "$output" = "$expected"
           test "$(cat "$package_stderr")" = 'native release stderr'
           "$installed/bin/tyrus" pgo-merge
           "$installed/bin/tyrus" build --release --pgo-use
-          output="$(cd "$package_project/nested" && "$package_project/target/tyrus-release-smoke" 2>"$package_stderr")"
+          output="$(cd "$package_project/nested" && "$package_project/target/release/tyrus-release-smoke" 2>"$package_stderr")"
           test "$output" = "$expected"
           test "$(cat "$package_stderr")" = 'native release stderr'
       - name: Package Windows release
@@ -617,7 +618,7 @@ jobs:
           Push-Location (Join-Path $packageProject 'nested')
           try {
             $packageStderr = Join-Path $env:RUNNER_TEMP 'tyrus-package-stderr.txt'
-            $output = & (Join-Path $packageProject 'target/tyrus-release-smoke.exe') 2> $packageStderr
+            $output = & (Join-Path $packageProject 'target/debug/tyrus-release-smoke.exe') 2> $packageStderr
             if ($LASTEXITCODE -ne 0) { throw 'Packaged native program failed.' }
             if ((Get-Content -Raw $packageStderr).Trim() -ne 'native release stderr') { throw 'Packaged program did not preserve stderr separately.' }
             if (($output -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged smoke output: $output" }
@@ -642,7 +643,7 @@ jobs:
           }
           $packageBinaryStdout = Join-Path $packageExitProject 'binary.stdout'
           $packageBinaryStderr = Join-Path $packageExitProject 'binary.stderr'
-          & (Join-Path $packageExitProject 'target/tyrus-packaged-exit-smoke.exe') > $packageBinaryStdout 2> $packageBinaryStderr
+          & (Join-Path $packageExitProject 'target/debug/tyrus-packaged-exit-smoke.exe') > $packageBinaryStdout 2> $packageBinaryStderr
           if ($LASTEXITCODE -ne 23) { throw "Packaged generated binary returned exit code $LASTEXITCODE instead of 23." }
           if ((Get-Item $packageBinaryStdout).Length -ne 0) { throw 'Packaged generated binary wrote unexpected data to stdout before process.exit(23).' }
           if ((Get-Item $packageBinaryStderr).Length -ne 0) { throw 'Packaged generated binary wrote unexpected data to stderr before process.exit(23).' }
@@ -655,7 +656,7 @@ jobs:
           }
           Push-Location (Join-Path $packageProject 'nested')
           try {
-            $releaseOutput = & (Join-Path $packageProject 'target/tyrus-release-smoke.exe') 2> $packageStderr
+            $releaseOutput = & (Join-Path $packageProject 'target/release/tyrus-release-smoke.exe') 2> $packageStderr
             if ($LASTEXITCODE -ne 0) { throw 'Packaged native release program failed.' }
             if ((Get-Content -Raw $packageStderr).Trim() -ne 'native release stderr') { throw 'Packaged release program did not preserve stderr separately.' }
             if (($releaseOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged release smoke output: $releaseOutput" }
@@ -671,7 +672,7 @@ jobs:
           }
           Push-Location (Join-Path $packageProject 'nested')
           try {
-            $pgoOutput = & (Join-Path $packageProject 'target/tyrus-release-smoke.exe') 2> $packageStderr
+            $pgoOutput = & (Join-Path $packageProject 'target/release/tyrus-release-smoke.exe') 2> $packageStderr
             if ($LASTEXITCODE -ne 0) { throw 'Packaged PGO generation program failed.' }
             if ((Get-Content -Raw $packageStderr).Trim() -ne 'native release stderr') { throw 'Packaged PGO generation program did not preserve stderr separately.' }
             if (($pgoOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged PGO output: $pgoOutput" }
@@ -689,7 +690,7 @@ jobs:
           }
           Push-Location (Join-Path $packageProject 'nested')
           try {
-            $pgoUseOutput = & (Join-Path $packageProject 'target/tyrus-release-smoke.exe') 2> $packageStderr
+            $pgoUseOutput = & (Join-Path $packageProject 'target/release/tyrus-release-smoke.exe') 2> $packageStderr
             if ($LASTEXITCODE -ne 0) { throw 'Packaged PGO use program failed.' }
             if ((Get-Content -Raw $packageStderr).Trim() -ne 'native release stderr') { throw 'Packaged PGO use program did not preserve stderr separately.' }
             if (($pgoUseOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged PGO use output: $pgoUseOutput" }
