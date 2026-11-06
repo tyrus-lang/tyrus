@@ -87,6 +87,14 @@ fn reverse_ip(address: &str) -> Result<String, &'static str> {
     let (socket, length) = match address {
         IpAddr::V4(address) => {
             let socket = libc::sockaddr_in {
+                #[cfg(any(
+                    target_vendor = "apple",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "openbsd",
+                    target_os = "netbsd"
+                ))]
+                sin_len: size_of::<libc::sockaddr_in>() as u8,
                 sin_family: libc::AF_INET as _,
                 sin_port: 0,
                 sin_addr: libc::in_addr {
@@ -99,6 +107,14 @@ fn reverse_ip(address: &str) -> Result<String, &'static str> {
         }
         IpAddr::V6(address) => {
             let socket = libc::sockaddr_in6 {
+                #[cfg(any(
+                    target_vendor = "apple",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "openbsd",
+                    target_os = "netbsd"
+                ))]
+                sin6_len: size_of::<libc::sockaddr_in6>() as u8,
                 sin6_family: libc::AF_INET6 as _,
                 sin6_port: 0,
                 sin6_flowinfo: 0,

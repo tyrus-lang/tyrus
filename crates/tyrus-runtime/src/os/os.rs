@@ -784,6 +784,7 @@ pub unsafe extern "C" fn tyrus_os_notify(
         if let Some(icon) = unsafe { unbox_str(options.icon) } {
             notification.icon(&icon);
         }
+        #[cfg(not(target_os = "macos"))]
         if let Some(urgency) = unsafe { unbox_i32(options.urgency) } {
             notification.urgency(match urgency {
                 0 => notify_rust::Urgency::Low,

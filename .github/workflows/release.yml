@@ -177,6 +177,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $llvm = Join-Path $env:LLVM_SYS_231_PREFIX 'bin/llvm-config.exe'
+          Write-Host "LLVM prefix: $env:LLVM_SYS_231_PREFIX"
+          & $llvm --version
+          & $llvm --libdir
+          & $llvm --libnames
+          & $llvm --link-shared --libnames
+          cargo tree -i llvm-sys
+
           cargo build --release -p tyrus-runtime
           if ($LASTEXITCODE -ne 0) { throw 'Could not build the release runtime for the JIT smoke tests.' }
           cargo test --release -p tyrus --bin tyrus jit_native_runtime_symbols
