@@ -131,6 +131,12 @@ jobs:
           echo "$prefix/bin" >> "$GITHUB_PATH"
           llvm_version="$("$prefix/bin/llvm-config" --version)"
           test "$llvm_version" = '23.1.1'
+          if [[ "$RUNNER_OS" == 'macOS' ]]; then
+            lld="$prefix/bin/ld64.lld"
+            test -x "$lld"
+            echo "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=$prefix/bin/clang" >> "$GITHUB_ENV"
+            echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld -C link-arg=--ld-path=$lld" >> "$GITHUB_ENV"
+          fi
       - name: Install LLVM on Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -154,6 +160,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes build-essential libc6-dev
+          libc_path="$("$LLVM_SYS_231_PREFIX/bin/clang" --print-file-name=libc.so)"
+          printf 'Clang libc path: %s\n' "$libc_path"
+          test "$libc_path" != 'libc.so'
+          test -f "$libc_path"
       - name: Build runtime and CLI on Unix
         if: runner.os != 'Windows'
         shell: bash
@@ -182,7 +192,6 @@ jobs:
           & $llvm --version
           & $llvm --libdir
           & $llvm --libnames
-          & $llvm --link-shared --libnames
           cargo tree -i llvm-sys
 
           cargo build --release -p tyrus-runtime
