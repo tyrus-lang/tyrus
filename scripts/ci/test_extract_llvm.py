@@ -9,6 +9,10 @@ from extract_llvm import extract_required, required_member
 
 
 class LlvmArchiveExtractionTests(unittest.TestCase):
+    def test_keeps_profile_tools_required_by_release_packages(self) -> None:
+        for name in ["llvm-profdata", "llvm-profdata-23", "llvm-profdata.exe"]:
+            self.assertTrue(required_member(tarfile.TarInfo(f"llvm/bin/{name}")))
+
     def test_includes_platform_lld_drivers(self) -> None:
         for name in ["ld64.lld", "ld.lld", "lld-link.exe"]:
             with self.subTest(name=name):
@@ -42,6 +46,7 @@ class LlvmArchiveExtractionTests(unittest.TestCase):
             destination = root / "out"
             members = {
                 "clang+llvm/bin/clang.exe": b"clang",
+                "clang+llvm/bin/llvm-profdata.exe": b"profile merger",
                 "clang+llvm/bin/LLVM-C.dll": b"llvm",
                 "clang+llvm/bin/readme.txt": b"not required",
                 "clang+llvm/lib/LLVM-C.lib": b"import library",
@@ -56,6 +61,9 @@ class LlvmArchiveExtractionTests(unittest.TestCase):
 
             self.assertEqual(
                 (destination / "clang+llvm/bin/clang.exe").read_bytes(), b"clang"
+            )
+            self.assertEqual(
+                (destination / "clang+llvm/bin/llvm-profdata.exe").read_bytes(), b"profile merger"
             )
             self.assertEqual(
                 (destination / "clang+llvm/bin/LLVM-C.dll").read_bytes(), b"llvm"

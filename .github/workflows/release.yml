@@ -132,6 +132,12 @@ jobs:
           llvm_config="$(find "$prefix_root" -type f -name llvm-config -print -quit)"
           test -n "$llvm_config"
           prefix="$(dirname "$(dirname "$llvm_config")")"
+          for tool in clang llvm-ar llvm-nm llvm-profdata; do
+            if [[ ! -x "$prefix/bin/$tool" ]]; then
+              echo "Required LLVM tool was not extracted: $prefix/bin/$tool" >&2
+              exit 1
+            fi
+          done
           echo "LLVM_SYS_231_PREFIX=$prefix" >> "$GITHUB_ENV"
           echo "$prefix/bin" >> "$GITHUB_PATH"
           llvm_version="$("$prefix/bin/llvm-config" --version)"
@@ -160,6 +166,9 @@ jobs:
           $llvmConfig = Get-ChildItem $prefixRoot -Filter llvm-config.exe -Recurse -File | Select-Object -First 1
           if ($null -eq $llvmConfig) { throw 'LLVM 23.1.1 llvm-config.exe was not found after extraction.' }
           $prefix = Split-Path (Split-Path $llvmConfig.FullName -Parent) -Parent
+          foreach ($tool in @('clang.exe', 'llvm-ar.exe', 'llvm-nm.exe', 'llvm-profdata.exe')) {
+            if (-not (Test-Path (Join-Path $prefix "bin/$tool"))) { throw "Required LLVM tool was not extracted: $tool" }
+          }
           "LLVM_SYS_231_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           (Join-Path $prefix 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $llvmVersion = (& (Join-Path $prefix 'bin/llvm-config.exe') --version).Trim()

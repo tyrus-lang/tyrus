@@ -7,6 +7,8 @@ use std::process;
 
 use tyrus_codegen as codegen;
 use tyrus_core::{diagnostics, project};
+#[cfg(any(target_os = "macos", target_env = "msvc"))]
+use tyrus_runtime as _;
 
 #[path = "compile/compile.rs"]
 mod compile;

@@ -15,6 +15,8 @@ LLVM_TOOLS = {
     "llvm-config-23",
     "llvm-nm",
     "llvm-nm-23",
+    "llvm-profdata",
+    "llvm-profdata-23",
     "lld",
     "ld.lld",
     "ld64.lld",

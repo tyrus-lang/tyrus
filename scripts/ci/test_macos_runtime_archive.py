@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,55 @@ def llvm_tool(name: str) -> str | None:
 
 
 class MacosRuntimeArchiveTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "darwin", "C++ ABI linking requires the macOS SDK")
+    def test_cpp_abi_symbols_are_resolved_before_compiling_llvm_consumers(self) -> None:
+        clang, linker = llvm_tool("clang"), llvm_tool("ld64.lld")
+        if not clang or not linker:
+            self.fail("the LLVM installation must provide clang and ld64.lld")
+        with tempfile.TemporaryDirectory(prefix="tyrus-cxx-abi-") as directory:
+            root = Path(directory)
+            (root / "probe.cpp").write_text('''
+namespace std { [[noreturn]] void terminate() noexcept; }
+int initial_value() { return 7; }
+int guarded_value() { static int value = initial_value(); return value; }
+struct Abstract { virtual void call() = 0; virtual ~Abstract(); };
+Abstract::~Abstract() {}
+int main(int argc, char**) {
+    if (argc == 100) std::terminate();
+    return guarded_value() == 7 ? 0 : 1;
+}
+''', encoding="utf-8")
+            output = subprocess.run([clang, f"--ld-path={linker}", "probe.cpp", "-lc++", "-lc++abi", "-o", "linked"], cwd=root, capture_output=True, text=True)
+            self.assertEqual(output.returncode, 0, output.stderr)
+            subprocess.run([str(root / "linked")], check=True, capture_output=True)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Rust Mach-O linking requires the macOS SDK")
+    def test_rust_runtime_rlib_retains_jit_exports_with_one_allocator(self) -> None:
+        clang = llvm_tool("clang")
+        linker = llvm_tool("ld64.lld")
+        nm = llvm_tool("llvm-nm")
+        if not clang or not linker or not nm:
+            self.fail("the LLVM installation must provide clang, ld64.lld, and llvm-nm")
+        with tempfile.TemporaryDirectory(prefix="tyrus-rust-jit-") as directory:
+            root = Path(directory)
+            (root / "runtime.rs").write_text('''
+#[global_allocator]
+static ALLOCATOR: std::alloc::System = std::alloc::System;
+#[unsafe(no_mangle)]
+pub extern "C" fn tyrus_probe() -> usize { vec![7_usize; 8].iter().sum() }
+''', encoding="utf-8")
+            (root / "main.rs").write_text("extern crate fixture_runtime as _; fn main() {}", encoding="utf-8")
+            subprocess.run(["rustc", "--edition=2024", "--crate-name", "fixture_runtime", "--crate-type=rlib", "runtime.rs"], cwd=root, check=True, capture_output=True)
+            output = subprocess.run([
+                "rustc", "--edition=2024", "main.rs", "--extern", "fixture_runtime=libfixture_runtime.rlib",
+                "-C", f"linker={clang}", "-C", f"link-arg=--ld-path={linker}",
+                "-C", "link-arg=-Wl,-u,_tyrus_probe", "-o", "linked",
+            ], cwd=root, capture_output=True, text=True)
+            self.assertEqual(output.returncode, 0, output.stderr)
+            symbols = subprocess.run([nm, "--defined-only", "linked"], cwd=root, check=True, capture_output=True, text=True).stdout
+            self.assertIn("_tyrus_probe", symbols)
+            subprocess.run([str(root / "linked")], check=True, capture_output=True)
+
     def test_jit_export_is_retained_without_duplicating_a_native_dependency(self) -> None:
         tools = {name: llvm_tool(name) for name in ("clang", "llvm-ar", "llvm-nm", "ld64.lld")}
         if not all(tools.values()):
