@@ -2,7 +2,7 @@
   "name": "tyrus",
   "displayName": "Tyrus",
   "description": "Language Server integration, syntax highlighting, diagnostics, navigation, and IntelliSense for Tyrus.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "tyrus-lang",
   "icon": "images/tyrus-logo.png",
   "license": "MIT",
