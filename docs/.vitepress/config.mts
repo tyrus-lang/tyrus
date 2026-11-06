@@ -181,7 +181,7 @@ export default defineConfig({
         icon: {
           svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="m21.198 3.08l-18.6 7.16c-1.29.5-1.27 1.22-.23 1.53l4.77 1.49l11.04-6.93c.52-.31 1-.14.61.2l-8.93 8.05h-.01l-.01.01l-.35 4.98c.51 0 .73-.23 1.01-.5l2.43-2.37l5.05 3.71c.93.51 1.6.25 1.84-.87l3.33-15.63c.33-1.34-.51-1.96-1.37-1.59z"/></svg>'
         },
-        link: 'https://t.me/tyrus'
+        link: 'https://t.me/tyruslang'
       }
     ],
 
