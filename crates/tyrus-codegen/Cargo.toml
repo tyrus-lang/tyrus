@@ -22,6 +22,11 @@ rustc-hash.workspace = true
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO"] }
 
+[target.'cfg(target_env = "msvc")'.dependencies]
+# llvm-sys 231 passes absolute MSVC system library paths as Rust library names.
+# build.rs resolves their directories separately to avoid interpreting drive letters as aliases.
+llvm-sys = { version = "231.0.1", features = ["no-llvm-linking"] }
+
 [dev-dependencies]
 logos.workspace = true
 

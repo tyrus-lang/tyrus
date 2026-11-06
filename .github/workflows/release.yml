@@ -155,6 +155,17 @@ jobs:
           (Join-Path $prefix 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $llvmVersion = (& (Join-Path $prefix 'bin/llvm-config.exe') --version).Trim()
           if ($LASTEXITCODE -ne 0 -or $llvmVersion -ne '23.1.1') { throw "Expected LLVM 23.1.1, found $llvmVersion." }
+      - name: Validate Windows LLVM link dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CARGO_CFG_TARGET_ENV: msvc
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP 'tyrus-llvm-link-check.exe'
+          rustc --edition=2024 crates/tyrus-codegen/build.rs -o $probe
+          if ($LASTEXITCODE -ne 0) { throw 'Could not compile the LLVM link dependency check.' }
+          & $probe
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM link dependencies are unavailable; inspect the missing library above.' }
       - name: Install Linux native development files
         if: runner.os == 'Linux'
         run: |
@@ -170,7 +181,7 @@ jobs:
         run: |
           cargo build --release -p tyrus-runtime
           native_output="$RUNNER_TEMP/native-static-libs.txt"
-          cargo rustc --release -p tyrus-runtime --lib -- --print=native-static-libs > "$native_output" 2>&1
+          cargo rustc --color never --release -p tyrus-runtime --lib -- --print=native-static-libs > "$native_output" 2>&1
           cat "$native_output"
           python scripts/ci/extract_native_static_libs.py "$native_output" target/release/tyrus-native-libs.json --target "${{ matrix.triple }}"
           mkdir -p target/debug

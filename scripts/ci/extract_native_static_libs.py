@@ -8,9 +8,11 @@ from pathlib import Path
 
 
 NATIVE_LIBS_LINE = re.compile(r"(?:^|\s)native-static-libs:\s*(.*)$")
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def parse_native_static_libs(output: str) -> list[str]:
+    output = ANSI_ESCAPE.sub("", output)
     matches = [
         match.group(1)
         for line in output.splitlines()

@@ -7,6 +7,10 @@ from extract_native_static_libs import parse_native_static_libs
 
 
 class NativeStaticLibParserTests(unittest.TestCase):
+    def test_removes_rustc_colors_before_parsing_library_names(self) -> None:
+        output = "\x1b[1m\x1b[36mnote\x1b[0m\x1b[1m: native-static-libs: -lm -lc\x1b[0m\r\n"
+        self.assertEqual(parse_native_static_libs(output), ["-lm", "-lc"])
+
     def test_parses_linux_linker_flags(self) -> None:
         output = "note: native-static-libs: -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc"
         self.assertEqual(
