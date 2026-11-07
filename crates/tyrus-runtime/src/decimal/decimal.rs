@@ -257,13 +257,28 @@ mod tests {
 
     fn rendered_decimal(coefficient: i128, exponent: i32) -> String {
         let mut fds = [0; 2];
+        #[cfg(not(windows))]
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        #[cfg(windows)]
+        assert_eq!(
+            unsafe { libc::pipe(fds.as_mut_ptr(), 64 * 1024, libc::O_BINARY) },
+            0
+        );
         tyrus_decimal_print(coefficient, exponent, fds[1]);
         assert_eq!(unsafe { libc::close(fds[1]) }, 0);
         let mut bytes = Vec::new();
         let mut buffer = [0_u8; 64];
         loop {
+            #[cfg(not(windows))]
             let read = unsafe { libc::read(fds[0], buffer.as_mut_ptr().cast(), buffer.len()) };
+            #[cfg(windows)]
+            let read = unsafe {
+                libc::read(
+                    fds[0],
+                    buffer.as_mut_ptr().cast(),
+                    buffer.len() as libc::c_uint,
+                )
+            };
             if read <= 0 {
                 break;
             }

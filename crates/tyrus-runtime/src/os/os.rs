@@ -1788,7 +1788,7 @@ mod tests {
             assert!(prevented);
             assert!(tyrus_os_prevent_sleep());
             assert!(
-                std::thread::spawn(tyrus_os_allow_sleep).join().expect(
+                std::thread::spawn(|| tyrus_os_allow_sleep()).join().expect(
                     "the Windows sleep-inhibition worker can be released from another thread"
                 )
             );

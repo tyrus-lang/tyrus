@@ -183,48 +183,41 @@ fn write_runtime_exports(
 }
 
 fn emit_runtime_link_args(symbols: &[String], out_dir: &std::path::Path) {
+    // The `tyrus` bin test harness receives `-bins` arguments. `-tests` also
+    // reaches integration test binaries that do not link the runtime rlib.
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_is_msvc() {
         if let Some(exports) = write_runtime_exports(out_dir, symbols)
             .unwrap_or_else(|error| panic!("failed to prepare JIT runtime exports: {error}"))
         {
             println!("cargo:rustc-link-arg-bins=/DEF:{}", exports.display());
-            println!("cargo:rustc-link-arg-tests=/DEF:{}", exports.display());
         }
     } else if target_os == "macos" {
         // Retain the C ABI from Cargo's rlibs without importing staticlib allocator shims.
         for symbol in symbols {
-            for target in ["bins", "tests"] {
-                println!("cargo:rustc-link-arg-{target}=-Wl,-u,{symbol}");
-            }
+            println!("cargo:rustc-link-arg-bins=-Wl,-u,{symbol}");
         }
         if let Some(exports) = write_runtime_exports(out_dir, symbols)
             .unwrap_or_else(|error| panic!("failed to prepare JIT runtime exports: {error}"))
         {
-            for target in ["bins", "tests"] {
-                println!("cargo:rustc-link-arg-{target}=-Xlinker");
-                println!("cargo:rustc-link-arg-{target}=-exported_symbols_list");
-                println!("cargo:rustc-link-arg-{target}=-Xlinker");
-                println!("cargo:rustc-link-arg-{target}={}", exports.display());
-            }
+            println!("cargo:rustc-link-arg-bins=-Xlinker");
+            println!("cargo:rustc-link-arg-bins=-exported_symbols_list");
+            println!("cargo:rustc-link-arg-bins=-Xlinker");
+            println!("cargo:rustc-link-arg-bins={}", exports.display());
         }
     } else {
         println!("cargo:rustc-link-arg-bins=-Wl,--allow-multiple-definition");
-        println!("cargo:rustc-link-arg-tests=-Wl,--allow-multiple-definition");
         if target_os == "linux" {
             if let Some(exports) = write_runtime_exports(out_dir, symbols)
                 .unwrap_or_else(|error| panic!("failed to prepare JIT runtime exports: {error}"))
             {
-                for target in ["bins", "tests"] {
-                    println!("cargo:rustc-link-arg-{target}=-Xlinker");
-                    println!("cargo:rustc-link-arg-{target}=--dynamic-list");
-                    println!("cargo:rustc-link-arg-{target}=-Xlinker");
-                    println!("cargo:rustc-link-arg-{target}={}", exports.display());
-                }
+                println!("cargo:rustc-link-arg-bins=-Xlinker");
+                println!("cargo:rustc-link-arg-bins=--dynamic-list");
+                println!("cargo:rustc-link-arg-bins=-Xlinker");
+                println!("cargo:rustc-link-arg-bins={}", exports.display());
             }
         } else if target_os == "windows" {
             println!("cargo:rustc-link-arg-bins=-Wl,--export-all-symbols");
-            println!("cargo:rustc-link-arg-tests=-Wl,--export-all-symbols");
         }
     }
 }
@@ -298,7 +291,6 @@ fn main() {
             if !target_is_msvc() {
                 for argument in macos_runtime_native_link_args() {
                     println!("cargo:rustc-link-arg-bins={argument}");
-                    println!("cargo:rustc-link-arg-tests={argument}");
                 }
                 println!("cargo:rerun-if-env-changed=SDKROOT");
                 let sdk_root = std::env::var_os("SDKROOT").map(std::path::PathBuf::from).or_else(|| {
@@ -317,9 +309,7 @@ fn main() {
                         "missing macOS SDK C++ library {}",
                         path.display()
                     );
-                    for target in ["bins", "tests"] {
-                        println!("cargo:rustc-link-arg-{target}={}", path.display());
-                    }
+                    println!("cargo:rustc-link-arg-bins={}", path.display());
                 }
             }
             println!("cargo:warning=retained JIT runtime symbols from Cargo runtime rlibs");
@@ -379,7 +369,6 @@ fn main() {
             entries.sort();
             for o in &entries {
                 println!("cargo:rustc-link-arg-bins={}", o.display());
-                println!("cargo:rustc-link-arg-tests={}", o.display());
                 o_count += 1;
             }
             println!("cargo:warning=linked {o_count} runtime objects for JIT symbol resolution");

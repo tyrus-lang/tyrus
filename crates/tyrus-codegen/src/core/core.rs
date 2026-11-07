@@ -3161,7 +3161,11 @@ impl<'ctx> Codegen<'ctx> {
         generated_return: Option<BasicTypeEnum<'ctx>>,
         string_type: StructType<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let thunk_name = format!("__tyrus_indirect_string_abi_{name}");
+        let thunk_name = if self.target == CompileTarget::Wasm {
+            format!("__tyrus_wasm_string_abi_{name}")
+        } else {
+            format!("__tyrus_windows_string_abi_{name}")
+        };
         if let Some(thunk) = self.module.get_function(&thunk_name) {
             debug_assert_eq!(
                 thunk.get_type(),
