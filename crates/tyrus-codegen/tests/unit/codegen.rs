@@ -8,6 +8,27 @@ fn dprintf_symbol() -> &'static str {
     "tyrus_dprintf"
 }
 
+fn write_captured_stdout(bytes: &[u8]) {
+    let mut offset = 0;
+    while offset < bytes.len() {
+        #[cfg(windows)]
+        let written = unsafe {
+            libc::write(
+                1,
+                bytes[offset..].as_ptr().cast(),
+                (bytes.len() - offset)
+                    .try_into()
+                    .expect("test output fits in u32"),
+            )
+        };
+        #[cfg(not(windows))]
+        let written =
+            unsafe { libc::write(1, bytes[offset..].as_ptr().cast(), bytes.len() - offset) };
+        assert!(written > 0, "stdout write failed: {written}");
+        offset += written as usize;
+    }
+}
+
 #[path = "codegen/array_tests/array_tests.rs"]
 mod array_tests;
 #[path = "codegen/async_tests/async_tests.rs"]
@@ -8238,9 +8259,7 @@ fn concurrent_stdout_captures_do_not_steal_each_others_output() {
                 let marker = format!("capture-{id}\n");
                 let captured = crate::core::capture_stdout(|| {
                     std::thread::sleep(std::time::Duration::from_millis(20));
-                    unsafe {
-                        libc::write(1, marker.as_ptr().cast(), marker.len());
-                    }
+                    write_captured_stdout(marker.as_bytes());
                 })
                 .expect("capture must succeed");
                 assert!(
@@ -8925,9 +8944,9 @@ fn matching_a_union_compares_its_tag() {
 #[test]
 fn a_capture_larger_than_the_pipe_buffer_completes() {
     let chunk = "x".repeat(1024) + "\n";
-    let captured = crate::core::capture_stdout(|| unsafe {
+    let captured = crate::core::capture_stdout(|| {
         for _ in 0..128 {
-            libc::write(1, chunk.as_ptr().cast(), chunk.len());
+            write_captured_stdout(chunk.as_bytes());
         }
     })
     .expect("capture must succeed");
@@ -8945,9 +8964,9 @@ fn a_panic_inside_a_capture_still_restores_stdout() {
     });
     assert!(panicked.is_err(), "the panic must propagate");
 
-    let after = crate::core::capture_stdout(|| unsafe {
+    let after = crate::core::capture_stdout(|| {
         let text = "still here\n";
-        libc::write(1, text.as_ptr().cast(), text.len());
+        write_captured_stdout(text.as_bytes());
     })
     .expect("capture must succeed");
     assert!(
