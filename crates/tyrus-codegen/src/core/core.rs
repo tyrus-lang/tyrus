@@ -3014,8 +3014,8 @@ impl<'ctx> Codegen<'ctx> {
             None => self.context.void_type().fn_type(&params, false),
         };
 
-        // Rust's wasm32 C ABI passes `TyrusString` indirectly, while LLVM
-        // lowers the generated `{ptr, i64}` value as two scalar arguments.
+        // Rust's wasm32 and Windows C ABIs pass `TyrusString` indirectly, while
+        // LLVM lowers the generated `{ptr, i64}` value as a direct argument.
         // Keep that target-specific convention at this one boundary: callers
         // use the ordinary generated-code signature and a private thunk spills
         // direct string arguments (and receives string results through sret)
@@ -3027,8 +3027,10 @@ impl<'ctx> Codegen<'ctx> {
         let returns_string = return_type.is_some_and(
             |kind| matches!(kind, BasicTypeEnum::StructType(value) if value == string_type),
         );
-        if self.target == CompileTarget::Wasm && (has_string_parameter || returns_string) {
-            return self.declare_wasm_string_abi_thunk(
+        if (self.target == CompileTarget::Wasm || cfg!(windows))
+            && (has_string_parameter || returns_string)
+        {
+            return self.declare_indirect_string_abi_thunk(
                 name,
                 function_type,
                 params.as_slice(),
@@ -3151,7 +3153,7 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    fn declare_wasm_string_abi_thunk(
+    fn declare_indirect_string_abi_thunk(
         &self,
         name: &str,
         generated_type: FunctionType<'ctx>,
@@ -3159,7 +3161,7 @@ impl<'ctx> Codegen<'ctx> {
         generated_return: Option<BasicTypeEnum<'ctx>>,
         string_type: StructType<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let thunk_name = format!("__tyrus_wasm_string_abi_{name}");
+        let thunk_name = format!("__tyrus_indirect_string_abi_{name}");
         if let Some(thunk) = self.module.get_function(&thunk_name) {
             debug_assert_eq!(
                 thunk.get_type(),
@@ -7734,7 +7736,13 @@ pub(crate) fn capture_stdout<F: FnOnce()>(run: F) -> Result<String, String> {
             }
         }
 
+        if cfg!(windows) && std::env::var_os("TYRUS_JIT_TRACE").is_some() {
+            eprintln!("JIT trace: capture ready");
+        }
         run();
+        if cfg!(windows) && std::env::var_os("TYRUS_JIT_TRACE").is_some() {
+            eprintln!("JIT trace: generated main returned");
+        }
 
         unsafe { libc::fflush(std::ptr::null_mut()) };
     }
