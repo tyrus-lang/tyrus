@@ -173,6 +173,10 @@ jobs:
           (Join-Path $prefix 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $llvmVersion = (& (Join-Path $prefix 'bin/llvm-config.exe') --version).Trim()
           if ($LASTEXITCODE -ne 0 -or $llvmVersion -ne '23.1.1') { throw "Expected LLVM 23.1.1, found $llvmVersion." }
+      - name: Verify MSVC runtime exports from the definition file
+        if: runner.os == 'Windows'
+        shell: bash
+        run: python -m unittest discover -s scripts/ci -p 'test_msvc_runtime_exports.py'
       - name: Validate Windows LLVM link dependencies
         if: runner.os == 'Windows'
         shell: pwsh

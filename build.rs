@@ -185,15 +185,6 @@ fn write_runtime_exports(
 fn emit_runtime_link_args(symbols: &[String], out_dir: &std::path::Path) {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_is_msvc() {
-        let roots = out_dir.join("runtime_roots.rsp");
-        let contents = symbols
-            .iter()
-            .map(|symbol| format!("/INCLUDE:{symbol}\n"))
-            .collect::<String>();
-        std::fs::write(&roots, contents).expect("could not write JIT runtime symbol roots");
-        for target in ["bins", "tests"] {
-            println!("cargo:rustc-link-arg-{target}=@{}", roots.display());
-        }
         if let Some(exports) = write_runtime_exports(out_dir, symbols)
             .unwrap_or_else(|error| panic!("failed to prepare JIT runtime exports: {error}"))
         {

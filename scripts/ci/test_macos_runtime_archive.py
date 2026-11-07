@@ -17,7 +17,10 @@ def llvm_tool(name: str) -> str | None:
 
 
 class MacosRuntimeArchiveTests(unittest.TestCase):
-    @unittest.skipUnless(sys.platform == "darwin", "C++ ABI linking requires the macOS SDK")
+    @unittest.skipUnless(
+        sys.platform == "darwin" and os.environ.get("LLVM_SYS_231_PREFIX"),
+        "C++ ABI linking requires the extracted LLVM toolchain and macOS SDK",
+    )
     def test_cpp_abi_symbols_are_resolved_before_compiling_llvm_consumers(self) -> None:
         clang, linker = llvm_tool("clang"), llvm_tool("ld64.lld")
         if not clang or not linker:
@@ -39,7 +42,10 @@ int main(int argc, char**) {
             self.assertEqual(output.returncode, 0, output.stderr)
             subprocess.run([str(root / "linked")], check=True, capture_output=True)
 
-    @unittest.skipUnless(sys.platform == "darwin", "Rust Mach-O linking requires the macOS SDK")
+    @unittest.skipUnless(
+        sys.platform == "darwin" and os.environ.get("LLVM_SYS_231_PREFIX"),
+        "Rust Mach-O linking requires the extracted LLVM toolchain and macOS SDK",
+    )
     def test_rust_runtime_rlib_retains_jit_exports_with_one_allocator(self) -> None:
         clang = llvm_tool("clang")
         linker = llvm_tool("ld64.lld")
