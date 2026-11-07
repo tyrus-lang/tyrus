@@ -300,9 +300,26 @@ fn main() {
                     println!("cargo:rustc-link-arg-bins={argument}");
                     println!("cargo:rustc-link-arg-tests={argument}");
                 }
-                for target in ["bins", "tests"] {
-                    println!("cargo:rustc-link-arg-{target}=-lc++");
-                    println!("cargo:rustc-link-arg-{target}=-lc++abi");
+                println!("cargo:rerun-if-env-changed=SDKROOT");
+                let sdk_root = std::env::var_os("SDKROOT").map(std::path::PathBuf::from).or_else(|| {
+                    let output = std::process::Command::new("xcrun")
+                        .args(["--sdk", "macosx", "--show-sdk-path"])
+                        .output()
+                        .ok()?;
+                    output.status.success().then(|| {
+                        std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim())
+                    })
+                }).expect("macOS runtime linking requires the macOS SDK to select system C++ libraries");
+                for library in ["libc++.tbd", "libc++abi.tbd"] {
+                    let path = sdk_root.join("usr/lib").join(library);
+                    assert!(
+                        path.is_file(),
+                        "missing macOS SDK C++ library {}",
+                        path.display()
+                    );
+                    for target in ["bins", "tests"] {
+                        println!("cargo:rustc-link-arg-{target}={}", path.display());
+                    }
                 }
             }
             println!("cargo:warning=retained JIT runtime symbols from Cargo runtime rlibs");

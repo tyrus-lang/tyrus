@@ -493,7 +493,13 @@ pub fn compile_with_runtime_options(
 }
 
 pub fn jit_run(program: &Program, project_name: &str) -> Result<String, String> {
+    if cfg!(windows) && std::env::var_os("TYRUS_JIT_TRACE").is_some() {
+        eprintln!("JIT trace: context creation");
+    }
     let context = Context::create();
+    if cfg!(windows) && std::env::var_os("TYRUS_JIT_TRACE").is_some() {
+        eprintln!("JIT trace: codegen initialization");
+    }
     let codegen = Codegen::new(&context, project_name, false, CompileTarget::Native);
     codegen.jit_and_run(program)
 }

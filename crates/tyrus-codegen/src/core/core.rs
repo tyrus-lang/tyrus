@@ -3896,7 +3896,14 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     pub fn jit_and_run(self, program: &Program) -> Result<String, String> {
+        let trace = |phase: &str| {
+            if cfg!(windows) && std::env::var_os("TYRUS_JIT_TRACE").is_some() {
+                eprintln!("JIT trace: {phase}");
+            }
+        };
+        trace("codegen");
         let module = self.codegen_and_verify(program)?;
+        trace("optimization");
 
         // Run mem2reg (promote alloca to SSA registers) and instcombine before
         // passing to MCJIT. Without these passes, MCJIT crashed with SIGSEGV on
@@ -3906,6 +3913,7 @@ impl<'ctx> Codegen<'ctx> {
         // they are cheap and the failure they avoided was a hard crash, not
         // because the crash is known to still be there.
         Self::optimize_module(&module);
+        trace("execution engine");
 
         use inkwell::OptimizationLevel;
 
@@ -3916,6 +3924,7 @@ impl<'ctx> Codegen<'ctx> {
                 format!("error[jit]: {msg}")
             })?;
 
+        trace("static constructors");
         engine.run_static_constructors();
 
         for item in &program.items {
@@ -3924,16 +3933,19 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        trace("main lookup");
         let main_addr = engine
             .get_function_address("main")
             .map_err(|_| "error[jit]: main not found".to_string())?;
 
+        trace("main execution");
         let result = capture_stdout(|| unsafe {
             let main_fn: unsafe extern "C" fn() -> i32 =
                 std::mem::transmute::<usize, unsafe extern "C" fn() -> i32>(main_addr);
             main_fn();
         })?;
 
+        trace("complete");
         Ok(result)
     }
 
