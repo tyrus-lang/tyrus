@@ -68,7 +68,7 @@ fontdb = "0"
 hostname = "0.4"
 if-addrs = "0.10"
 inquire = "0.9"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm23-1"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", default-features = false, features = ["llvm23-1", "target-x86", "target-aarch64", "target-webassembly"] }
 libc = "0.2"
 tar = { version = "0.4", default-features = false }
 logos = "0.16"
