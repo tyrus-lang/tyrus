@@ -302,7 +302,6 @@ fn main() {
                 }
                 for target in ["bins", "tests"] {
                     println!("cargo:rustc-link-arg-{target}=-lc++");
-                    println!("cargo:rustc-link-arg-{target}=-lc++abi");
                 }
             }
             println!("cargo:warning=retained JIT runtime symbols from Cargo runtime rlibs");

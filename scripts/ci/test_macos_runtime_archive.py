@@ -25,6 +25,9 @@ class MacosRuntimeArchiveTests(unittest.TestCase):
         clang, linker = llvm_tool("clang"), llvm_tool("ld64.lld")
         if not clang or not linker:
             self.fail("the LLVM installation must provide clang and ld64.lld")
+        sdk_root = os.environ.get("SDKROOT")
+        if not sdk_root or not Path(sdk_root, "usr", "lib").is_dir():
+            self.fail("the macOS SDK root must be set before C++ ABI linking")
         with tempfile.TemporaryDirectory(prefix="tyrus-cxx-abi-") as directory:
             root = Path(directory)
             (root / "probe.cpp").write_text('''
@@ -38,7 +41,7 @@ int main(int argc, char**) {
     return guarded_value() == 7 ? 0 : 1;
 }
 ''', encoding="utf-8")
-            output = subprocess.run([clang, f"--ld-path={linker}", "probe.cpp", "-lc++", "-lc++abi", "-o", "linked"], cwd=root, capture_output=True, text=True)
+            output = subprocess.run([clang, f"--ld-path={linker}", "-isysroot", sdk_root, "probe.cpp", "-lc++", "-o", "linked"], cwd=root, capture_output=True, text=True)
             self.assertEqual(output.returncode, 0, output.stderr)
             subprocess.run([str(root / "linked")], check=True, capture_output=True)
 
@@ -52,6 +55,9 @@ int main(int argc, char**) {
         nm = llvm_tool("llvm-nm")
         if not clang or not linker or not nm:
             self.fail("the LLVM installation must provide clang, ld64.lld, and llvm-nm")
+        sdk_root = os.environ.get("SDKROOT")
+        if not sdk_root or not Path(sdk_root, "usr", "lib").is_dir():
+            self.fail("the macOS SDK root must be set before Rust Mach-O linking")
         with tempfile.TemporaryDirectory(prefix="tyrus-rust-jit-") as directory:
             root = Path(directory)
             (root / "runtime.rs").write_text('''
@@ -65,6 +71,7 @@ pub extern "C" fn tyrus_probe() -> usize { vec![7_usize; 8].iter().sum() }
             output = subprocess.run([
                 "rustc", "--edition=2024", "main.rs", "--extern", "fixture_runtime=libfixture_runtime.rlib",
                 "-C", f"linker={clang}", "-C", f"link-arg=--ld-path={linker}",
+                "-C", "link-arg=-isysroot", "-C", f"link-arg={sdk_root}",
                 "-C", "link-arg=-Wl,-u,_tyrus_probe", "-o", "linked",
             ], cwd=root, capture_output=True, text=True)
             self.assertEqual(output.returncode, 0, output.stderr)

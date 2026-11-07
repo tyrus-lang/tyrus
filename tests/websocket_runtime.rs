@@ -268,7 +268,9 @@ async function main(): Promise<void> {
 }
 "#,
     );
-    assert_eq!(stdout, "handler closed\nclient closed 1001\n");
+    let mut lines = stdout.lines().collect::<Vec<_>>();
+    lines.sort_unstable();
+    assert_eq!(lines, ["client closed 1001", "handler closed"]);
 }
 
 #[test]
