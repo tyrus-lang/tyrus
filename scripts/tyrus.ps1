@@ -73,8 +73,18 @@ try {
     Write-NativeLinkManifest
 
     Write-Host '==> Running workspace tests'
-    $testOutput = & cargo test --workspace 2>&1
-    $testStatus = $LASTEXITCODE
+    $previousJitTrace = $env:TYRUS_JIT_TRACE
+    $env:TYRUS_JIT_TRACE = '1'
+    try {
+        $testOutput = & cargo test --workspace -- --nocapture 2>&1
+        $testStatus = $LASTEXITCODE
+    } finally {
+        if ($null -eq $previousJitTrace) {
+            Remove-Item Env:TYRUS_JIT_TRACE -ErrorAction SilentlyContinue
+        } else {
+            $env:TYRUS_JIT_TRACE = $previousJitTrace
+        }
+    }
     $testOutput | ForEach-Object { Write-Host $_ }
     $testResults = [regex]::Matches(($testOutput -join "`n"), 'test result:.*?([0-9]+) passed; ([0-9]+) failed')
     $testsPassed = 0
