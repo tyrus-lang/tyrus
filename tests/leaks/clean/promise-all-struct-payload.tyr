@@ -1,0 +1,28 @@
+// Promise.all must transfer each recursively owned struct payload into its result array exactly once.
+interface Profile {
+    name: string;
+    aliases: string[];
+}
+
+async function profile(name: string): Promise<Profile> {
+    return { name: name.toUpperCase(), aliases: name.split("") };
+}
+
+const main = async (): Promise<void> => {
+    let total: usize = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const profiles: Profile[] = await Promise.all<Profile>([
+            profile("ada"),
+            profile("grace"),
+        ]);
+        total += profiles[0].name.length + profiles[1].aliases[0].length;
+        const settled = await Promise.allSettled<Profile>([
+            profile("margaret"),
+            Promise.reject<Profile>({ message: "no profile", code: "ERR_NO_PROFILE" }),
+        ]);
+        await Promise.resolve<void>();
+        total += settled.length;
+    }
+    console.log(total);
+    console.log("assert:", 1200);
+};

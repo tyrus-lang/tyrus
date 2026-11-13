@@ -1,0 +1,10 @@
+interface Basket {
+    items: string[];
+}
+
+const main = (): void => {
+    const basket: Basket = { items: ["a"] };
+    const taken: string[] = basket.items;
+    console.log(taken.length);
+    console.log(basket.items.length);
+};

@@ -1,0 +1,26 @@
+// A chained comparison (`a < b < c`) must evaluate a shared middle term
+// exactly once and release exactly the one allocation it made -- not once
+// per comparison the term takes part in, and not zero times because nothing
+// but the chain itself ever touches it.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        // Unbound temporary: the middle term's allocation exists only inside
+        // the chain expression, never bound to a name.
+        if ("hi" === "  hi  ".trim() === "hi") {
+            total += 1;
+        }
+
+        // Rebind: the same owned value is also bound to a name and later
+        // reassigned, so the chain's internal handling and the binding's own
+        // release must each account for their own copy without double
+        // freeing or leaking the other's.
+        let middle: string = "  bye  ".trim();
+        if ("bye" === middle === "bye") {
+            total += 1;
+        }
+        middle = "  again  ".trim();
+        console.log(middle.length > 0);
+    }
+    console.log(total);
+};

@@ -1,0 +1,41 @@
+// Giving `HttpRouter` its drop glue was only half the fix. A frame slot takes a
+// counted handle by retaining it, which leaves the source with a reference of
+// its own to drop; a move-only handle gets no such reference, so the two slots
+// name one allocation. With the ownership bit left set on both, the frame drop
+// released the same router twice, which AddressSanitizer reported as a
+// use-after-free inside the router's own internals.
+//
+// The move is what the language already promised: naming `app` after
+// `const owner: HttpRouter = app;` does not compile. The source slot now gives
+// its ownership up at the move, so exactly one name releases the router.
+import { createRouter, HttpReply, HttpRouter, HttpStatus, TextBody } from "tyrus:http";
+import { sleepAsync } from "tyrus:task";
+
+async function moveRouter(): Promise<i32> {
+    const app: HttpRouter = createRouter();
+    app.get("/", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            reply.status(HttpStatus.Ok).send("ok");
+        },
+    });
+    const owner: HttpRouter = app;
+    await sleepAsync(1);
+    owner.get("/second", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            reply.status(HttpStatus.Ok).send("second");
+        },
+    });
+    return 1;
+}
+
+const main = async (): Promise<void> => {
+    let moved: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const one: i32 = await moveRouter();
+        moved += one;
+    }
+    console.log(moved);
+    console.log("assert:", 200);
+};

@@ -1,0 +1,183 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "tyrus Project Configuration",
+  "description": "Configuration schema for an tyrus project (tyrus.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "scripts", "security"],
+  "properties": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "description": "Project metadata.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The project name."
+        },
+        "version": {
+          "type": "string",
+          "description": "The project version."
+        },
+        "authors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The project authors."
+        },
+        "description": {
+          "type": "string",
+          "description": "A short description of the project."
+        },
+        "target": {
+          "type": "string",
+          "enum": ["script", "cli", "api"],
+          "description": "The project template scaffolded by `tyrus new`. This is informational and reserved for target-aware tooling."
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional build configuration. When omitted, optimization is disabled by default.",
+      "properties": {
+        "optimize": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to compile with optimizations by default."
+        }
+      }
+    },
+    "development": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional settings that apply only while the program runs with TYRUS_ENV=development.",
+      "properties": {
+        "https": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true and TYRUS_ENV=development, a server started without `tls` serves HTTPS with a `localhost` certificate signed by a local development certificate authority, created once in the user configuration directory. Ignored in every other environment."
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional asynchronous runtime configuration, baked into the compiled program.",
+      "properties": {
+        "workerThreads": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many worker threads the asynchronous runtime may use. Defaults to the number of logical CPUs. The TYRUS_WORKER_THREADS environment variable overrides this value at startup."
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend"],
+      "description": "Optional database connection and runtime configuration.",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": ["sqlite", "mysql", "postgresql", "mongodb"],
+          "description": "Database engine used by this project."
+        },
+        "path": {
+          "type": "string",
+          "description": "SQLite database file path, relative to the project root."
+        },
+        "connectionEnv": {
+          "type": "string",
+          "description": "Environment variable containing the database connection string for MySQL, PostgreSQL, or MongoDB."
+        },
+        "schema": {
+          "type": "string",
+          "description": "Path to the generated database schema snapshot. Defaults to tyrus-db-schema.json."
+        },
+        "pool": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional connection pool limits and timeouts for server databases.",
+          "properties": {
+            "maxConnections": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "connectTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+            "acquireTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+            "queryTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 },
+            "idleTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 86400000 },
+            "maxLifetimeMs": { "type": "integer", "minimum": 1, "maximum": 86400000 }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional TLS certificate files for server database connections.",
+          "properties": {
+            "caFile": { "type": "string" },
+            "certFile": { "type": "string" },
+            "keyFile": { "type": "string" }
+          }
+        },
+        "sqlite": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional SQLite journal and synchronization settings.",
+          "properties": {
+            "journalMode": { "type": "string", "enum": ["wal", "delete"] },
+            "synchronous": { "type": "string", "enum": ["full", "normal"] },
+            "busyTimeoutMs": { "type": "integer", "minimum": 1, "maximum": 120000 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "backend": { "const": "sqlite" } }, "required": ["backend"] },
+          "then": {
+            "required": ["path"],
+            "not": { "anyOf": [{ "required": ["connectionEnv"] }, { "required": ["pool"] }, { "required": ["tls"] }] }
+          }
+        },
+        {
+          "if": { "properties": { "backend": { "enum": ["mysql", "postgresql", "mongodb"] } }, "required": ["backend"] },
+          "then": {
+            "required": ["connectionEnv"],
+            "not": { "anyOf": [{ "required": ["path"] }, { "required": ["sqlite"] }] }
+          }
+        }
+      ]
+    },
+    "scripts": {
+      "type": "object",
+      "description": "Named scripts runnable through the tyrus CLI.",
+      "additionalProperties": { "type": "string" }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["envFile", "envSealed"],
+      "description": "Security-related settings.",
+      "properties": {
+        "envFile": {
+          "type": "string",
+          "description": "Path to the .env file, relative to the project root. When set, its variables are typed and validated, exposed through `process.env`, and a `.env.example` mirror is kept in sync."
+        },
+        "envSealed": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, build encrypts envFile to target/.env.sealed with the project seal key, and the binary loads only the sealed env file next to the executable."
+        }
+      }
+    },
+    "imports": {
+      "type": "object",
+      "description": "Static aliases that map import prefixes beginning with # to directories relative to the project root.",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^\\./"
+      },
+      "default": {
+        "#": "./src"
+      }
+    }
+  }
+}

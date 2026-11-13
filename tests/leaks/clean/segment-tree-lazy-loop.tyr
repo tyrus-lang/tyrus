@@ -1,0 +1,23 @@
+// SegmentTreeLazy updateRange/query/len/isEmpty in a 200-iteration loop.
+import { SegmentTreeLazy } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const data: i32[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        const st = SegmentTreeLazy(data);
+        total += st.query(0, 16);
+        total += st.query(2, 10);
+        total += st.query(15, 16);
+        st.updateRange(3, 7, 10);
+        total += st.query(0, 16);
+        st.updateRange(0, 16, -1);
+        total += st.query(5, 12);
+        total += st.len() as i32;
+        if (st.isEmpty()) {
+            total += 1;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 94400);
+};

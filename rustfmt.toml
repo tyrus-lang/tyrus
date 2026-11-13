@@ -1,0 +1,7 @@
+# The style the repository is written in, pinned so it does not depend on the
+# crate edition or on which machine runs the formatter.
+#
+# rustfmt derives `style_edition` from `edition` in `Cargo.toml`, which is 2024
+# here. Leaving it implicit let different rustfmt defaults disagree about the
+# same file, causing `cargo fmt --all -- --check` to fail in both directions.
+style_edition = "2024"

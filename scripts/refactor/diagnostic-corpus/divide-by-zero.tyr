@@ -1,0 +1,4 @@
+const main = (): void => {
+    const result: i32 = 10 / 0;
+    console.log(result);
+};

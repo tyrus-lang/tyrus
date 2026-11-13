@@ -1,0 +1,54 @@
+// `loop` as an expression carries the value of its `break` out of the loop, and
+// that value may be an allocation.
+//
+// It leaked, once per iteration: `break <value>` stores an independent clone
+// into the loop's result slot and releases the source, precisely so the payload
+// outlives the body scope, but the ownership registration that would later
+// free it died with that scope, and `emit_loop_expr` handed the loaded value
+// back without claiming it. Measured at 6 bytes per iteration for the string
+// buffer and 12 for the whole `3 x i32` array buffer.
+//
+// The control that placed the fault in the loop rather than the allocation: the
+// same `"value".toUpperCase()` bound directly, with no `loop` around it,
+// measured zero. Only the trip through the result slot lost it.
+//
+// Nothing else in the corpus covers this path, which is why the feature landed
+// with the leak: every other case allocates and binds with no `loop` expression
+// in between.
+const main = (): void => {
+    let letters: usize = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const text: string = loop {
+            break "value".toUpperCase();
+        };
+        letters += text.length;
+    }
+    console.log(letters);
+    console.log("assert:", 2500);
+
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const numbers: i32[] = loop {
+            break [i, i + 1, i + 2];
+        };
+        total += numbers[0];
+    }
+    console.log(total);
+    console.log("assert:", 124750);
+
+    // A value break that is not the first statement, so the slot is written
+    // after other work in the body rather than immediately.
+    let joined: usize = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const label: string = loop {
+            const prefix: string = "item".toUpperCase();
+            if (i >= 0) {
+                break prefix;
+            }
+            break "";
+        };
+        joined += label.length;
+    }
+    console.log(joined);
+    console.log("assert:", 2000);
+};

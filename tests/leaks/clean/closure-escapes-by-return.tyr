@@ -1,0 +1,32 @@
+// A closure returned from a function and bound to a name that only ever calls
+// it, capturing an owned value.
+//
+// This was first a use-after-free, the environment stored the captured pointer
+// and the callee freed it on return, closed by cloning the capture. The clone
+// then leaked, because the closure value `{ function, environment }` carried no
+// way for the receiving caller to reach the destructor.
+//
+// Now closed. The environment carries its destructor in a header slot, so any
+// owner reaches it through `env[0]`, and a `const` binding proved by escape
+// analysis to be this closure's sole owner, never aliased, passed, returned
+// onward, or captured, drops it once at scope exit. A binding that fails that
+// proof is left to leak rather than risk freeing a closure another reference
+// still holds; those shapes live in `closure-aliased-or-escaping`.
+//
+// Expected output is 400.
+const makeCounter = (label: string): () => usize => {
+    const held: string = label.toUpperCase();
+    return (): usize => {
+        return held.length;
+    };
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const counter = makeCounter("ab");
+        total += counter();
+    }
+    console.log(total);
+    console.log("assert:", 400);
+};

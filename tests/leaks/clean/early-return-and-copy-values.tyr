@@ -1,0 +1,17 @@
+// An early return must release what the scope owns without releasing what it
+// hands back, and Copy values must not be released at all.
+const pick = (flag: boolean): string => {
+    if (flag) {
+        return "a".toUpperCase();
+    }
+    const other: string = "b".trim();
+    return other;
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += pick(i % 2 === 0).length;
+    }
+    console.log(total);
+};

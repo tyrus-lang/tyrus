@@ -1,0 +1,49 @@
+==================
+Reserved word as an interface field name
+==================
+
+interface Event { type: string; }
+
+---
+
+(source_file
+  (declaration
+    (interface_declaration
+      name: (identifier)
+      body: (object_type
+        (property_signature
+          name: (identifier)
+          type: (primitive_type))))))
+
+==================
+Readonly modifier on a property
+==================
+
+interface Config { readonly id: i32; }
+
+---
+
+(source_file
+  (declaration
+    (interface_declaration
+      name: (identifier)
+      body: (object_type
+        (property_signature
+          name: (identifier)
+          type: (primitive_type))))))
+
+==================
+A property named readonly
+==================
+
+interface Frozen { readonly: string; }
+
+---
+
+(source_file
+  (declaration
+    (interface_declaration
+      name: (identifier)
+      body: (object_type
+        (property_signature
+          type: (primitive_type))))))

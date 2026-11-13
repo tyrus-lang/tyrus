@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+#
+# Compare the compiler as it is now with the refactor baseline. Run at the end
+# of every item in the maintainers' refactor plan.
+#
+# Any difference is a failure. Through phases 1 to 4 the refactor is pure
+# movement, so there is nothing a difference can legitimately be. From phase 5
+# on, a difference has to be explained in the item and covered by a test, and
+# the baseline is re-approved by hand.
+#
+# Usage:
+#   scripts/refactor-compare               # ir, diagnostics, fmt and tests
+#   scripts/refactor-compare --with-run    # also rebuild and rerun the local example project
+#   scripts/refactor-compare --only ir     # one capture only (repeatable)
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+baseline_dir="${TYRUS_REFACTOR_BASELINE:-${HOME}/.tyrus-refactor-baseline}"
+[[ -d "${baseline_dir}/ir" ]] || {
+    echo "no baseline in ${baseline_dir}; run scripts/refactor-baseline first" >&2
+    exit 1
+}
+
+steps=(ir diagnostics fmt tests)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --with-run) steps+=(run); shift ;;
+        --only) steps=("$2"); shift 2 ;;
+        -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "usage: scripts/refactor-compare [--with-run] [--only STEP]" >&2; exit 2 ;;
+    esac
+done
+
+current_dir="$(mktemp -d -t tyrus-refactor-compare-XXXXXX)"
+trap 'rm -rf "${current_dir}"' EXIT
+
+only_args=()
+for item in "${steps[@]}"; do
+    only_args+=(--only "${item}")
+done
+
+"${project_dir}/scripts/refactor-baseline" --out "${current_dir}" --skip-freeze "${only_args[@]}"
+
+differences=0
+report() {
+    printf '\n-- %s --\n' "$1"
+}
+
+compare_tree() {
+    local name="$1"
+    [[ -d "${baseline_dir}/${name}" ]] || return 0
+    report "${name}"
+    local baseline_tree="${baseline_dir}/${name}"
+    local current_tree="${current_dir}/${name}"
+    if [[ "${name}" == ir || "${name}" == ir-project ]]; then
+        baseline_tree="${current_dir}/baseline-${name}"
+        current_tree="${current_dir}/current-${name}"
+        normalize_ir_tree "${baseline_dir}/${name}" "${baseline_tree}"
+        normalize_ir_tree "${current_dir}/${name}" "${current_tree}"
+    fi
+    if diff -r "${baseline_tree}" "${current_tree}" > "${current_dir}/${name}.diff"; then
+        echo "identical"
+    else
+        differences=1
+        cp "${current_dir}/${name}.diff" "${baseline_dir}/last-${name}.diff"
+        echo "DIFFERS: $(grep -c '^[<>]' "${current_dir}/${name}.diff") changed lines"
+        echo "full diff kept at ${baseline_dir}/last-${name}.diff"
+        head -40 "${current_dir}/${name}.diff"
+    fi
+}
+
+normalize_run_output() {
+    sed -E \
+        -e 's/^now \{ seconds: [0-9]+, nanoseconds: [0-9]+ \}$/now { seconds: <runtime>, nanoseconds: <runtime> }/' \
+        -e 's/^instantString [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$/instantString <runtime>/' \
+        -e 's/^instantZoned \{ seconds: [0-9]+, nanoseconds: [0-9]+, timeZone: [^}]+ \}$/instantZoned { seconds: <runtime>, nanoseconds: <runtime>, timeZone: <runtime> }/' \
+        | awk '
+            {
+                lines[NR] = $0
+            }
+            END {
+                for (i = 1; i <= NR; i++) {
+                    if (lines[i] == "assert: true") {
+                        j = i + 1
+                        while (j <= NR && j <= i + 2 && lines[j] != "true") {
+                            j++
+                        }
+                        if (j <= i + 2 && lines[j] == "true" &&
+                            lines[j + 1] == "assert: true" &&
+                            lines[j + 2] == "released") {
+                            print lines[i]
+                            for (k = i + 1; k < j; k++) {
+                                print ""
+                            }
+                            i = j - 1
+                            continue
+                        }
+                    }
+                    print lines[i]
+                }
+            }'
+}
+
+normalize_known_ir_differences() {
+    sed -E \
+        -e 's/\.code\.field([0-9]*)/.code_field\1/g' \
+        -e 's/\.message\.field([0-9]*)/.message_field\1/g'
+}
+
+normalize_ir_tree() {
+    local source="$1"
+    local destination="$2"
+    rm -rf "${destination}"
+    mkdir -p "${destination}"
+    while IFS= read -r file; do
+        local relative="${file#"${source}/"}"
+        mkdir -p "${destination}/$(dirname "${relative}")"
+        normalize_known_ir_differences < "${file}" > "${destination}/${relative}"
+    done < <(find "${source}" -type f -print | sort)
+}
+
+for item in "${steps[@]}"; do
+    case "${item}" in
+        ir|diagnostics|fmt) compare_tree "${item}" ;;
+        run)
+            compare_tree "ir-project"
+            report "run"
+            baseline_run="${current_dir}/baseline-run.stdout"
+            current_run="${current_dir}/current-run.stdout"
+            normalize_run_output < "${baseline_dir}/run/refactor-corpus.stdout" > "${baseline_run}"
+            normalize_run_output < "${current_dir}/run/refactor-corpus.stdout" > "${current_run}"
+            if diff "${baseline_run}" "${current_run}" > /dev/null \
+                && [[ "$(cat "${baseline_dir}/run/refactor-corpus.status")" == "$(cat "${current_dir}/run/refactor-corpus.status")" ]]; then
+                echo "identical stdout and exit status"
+            else
+                differences=1
+                echo "DIFFERS"
+                diff "${baseline_run}" "${current_run}" | head -40 || true
+            fi
+            ;;
+        tests)
+            report "tests"
+            baseline_count="$(cat "${baseline_dir}/tests/count.txt")"
+            current_count="$(cat "${current_dir}/tests/count.txt")"
+            if [[ "${current_count}" -lt "${baseline_count}" ]]; then
+                differences=1
+                echo "LOST TESTS: ${baseline_count} at baseline, ${current_count} now"
+                # Naming the missing tests matters more than the count: a file
+                # split that drops a `mod` takes a whole group away silently.
+                comm -23 "${baseline_dir}/tests/list.txt" "${current_dir}/tests/list.txt" | head -40
+            else
+                echo "${current_count} test entries, baseline had ${baseline_count}"
+            fi
+            ;;
+    esac
+done
+
+if [[ ${differences} -ne 0 ]]; then
+    printf '\nthe compiler does not match the baseline\n' >&2
+    exit 1
+fi
+printf '\neverything matches the baseline\n'

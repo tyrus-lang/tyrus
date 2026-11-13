@@ -1,0 +1,39 @@
+// An array literal that never leaves the scope that declares it is built in a
+// stack slot instead of a heap buffer, so nothing releases it and nothing may
+// try to. The first wiring of that optimization crashed here: the literal
+// declined to register a release plan, and the *declaration* claimed the
+// binding anyway, by syntax and type, in `statements.rs`, so scope exit
+// handed a stack address to `free`.
+//
+// This file is the shape that crashed, plus the shapes next to it that must
+// stay on the heap. Run under `detect_stack_use_after_return=1`: a slot wrongly
+// reused across iterations, or read after its frame died, is caught there and
+// nowhere else.
+const take = (values: i32[]): i32 => values[0];
+
+const main = (): void => {
+    // Contained: only indexed, only inside this scope. This one is the stack.
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const numbers: i32[] = [i & 7, i & 15, i & 31];
+        total += numbers[0] + numbers[1] + numbers[2];
+    }
+    console.log(total);
+
+    // Escaping shapes, each of which must keep its heap buffer and release it
+    // exactly once. Passing it to a callee, aliasing it, and growing it are the
+    // three ways the buffer outlives (or outgrows) the literal that made it.
+    for (let i: i32 = 0; i < 500; i += 1) {
+        const passed: i32[] = [1, 2, 3];
+        total += take(passed);
+
+        const aliased: i32[] = [4, 5, 6];
+        const alias: i32[] = aliased;
+        total += alias[0];
+
+        let grown: i32[] = [7, 8, 9];
+        grown.push(10);
+        total += grown[3];
+    }
+    console.log(total);
+};

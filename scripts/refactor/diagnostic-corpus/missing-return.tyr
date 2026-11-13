@@ -1,0 +1,7 @@
+const half = (value: i32): i32 => {
+    console.log(value);
+};
+
+const main = (): void => {
+    console.log(half(4));
+};

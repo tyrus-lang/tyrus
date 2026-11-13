@@ -1,0 +1,8 @@
+{
+  "project": {
+    "name": "diagnostic-corpus",
+    "version": "0.1.0",
+    "description": "Throwaway project used to capture diagnostics for the refactor baseline"
+  },
+  "dependencies": {}
+}

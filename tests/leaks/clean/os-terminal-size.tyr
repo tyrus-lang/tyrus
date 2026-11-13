@@ -1,0 +1,32 @@
+// `terminalSize()` returns `[u16, u16]?`, a boxed tuple of two `Copy`
+// elements, the same box-a-primitive shape as `cpuTemp()`'s `f32?`, just
+// with a 4-byte payload instead of 4 bytes of a single scalar. Absence is
+// expected and valid here: this leak corpus runs headless (no tty attached
+// to stdout), so every call is exercising the null path, not the boxed one.
+import { terminalSize } from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        // Unbound temporary.
+        if (terminalSize()) {
+            total += 1;
+        }
+
+        // Bound to a name.
+        const size: [u16, u16]? = terminalSize();
+        if (size) {
+            total += size[0] as usize;
+            total += size[1] as usize;
+        }
+
+        // Rebind.
+        let rebound: [u16, u16]? = terminalSize();
+        rebound = terminalSize();
+        if (rebound) {
+            total += rebound[0] as usize;
+        }
+    }
+    console.log(total >= 0);
+    console.log("assert:", true);
+};

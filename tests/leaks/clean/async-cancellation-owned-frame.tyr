@@ -1,0 +1,27 @@
+// Cancellation settles once and leaves frame-owned state for one final cleanup.
+import { cancel, sleepAsync } from "tyrus:task";
+
+async function cancelOnce(): Promise<i32> {
+    const owned: string = "frame".toUpperCase();
+    const operation: Promise<void> = sleepAsync(1000);
+    let cancelled: i32 = 0;
+    if (cancel(operation, "Cancelled by leak test")) {
+        cancelled += 1;
+    }
+    try {
+        await operation;
+    } catch (error: Error) {
+        cancelled += owned.length as i32 - 5;
+    }
+    return cancelled;
+}
+
+const main = async (): Promise<void> => {
+    let cancelled: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const current: i32 = await cancelOnce();
+        cancelled += current;
+    }
+    console.log(cancelled);
+    console.log("assert:", 200);
+};

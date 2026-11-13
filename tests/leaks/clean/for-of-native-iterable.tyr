@@ -1,0 +1,47 @@
+// Iterating a direct owned native array result, `for (const node of g.nodes())`,
+// in a 200-iteration loop. The iterable's array is an owned native temporary
+// recorded as pending; the loop body's own expression statements must not drain
+// it mid-loop (that freed the array while the loop was still walking it, a
+// double free) and it must be released exactly once when the loop finishes.
+// Also covers an owned tuple array (`g.edges()`), a compound owned iterable
+// (`g.nodes().slice(0, 1)`), and a return out of a loop over an owned iterable
+// A fifth shape (a `return` out of a loop over an owned iterable) is *not*
+// here: it still leaks, and lives in `known/for-of-return-native-iterable.tyr`
+// with the analysis. Keeping it here would fail this file as a whole and stop
+// it guarding the four shapes that are closed.
+import { Graph } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: i32 = 0;
+    let edges: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const g = Graph<string, i32>();
+        g.addNode("a");
+        g.addNode("b");
+        g.addNode("c");
+        g.addEdge("a", "b", 1);
+        g.addEdge("b", "c", 2);
+        g.addEdge("a", "c", 3);
+        for (const node of g.nodes()) {
+            total += node.length as i32;
+        }
+        for (const [s, t, w] of g.edges()) {
+            total += s.length as i32;
+            total += t.length as i32;
+            edges += w;
+        }
+        for (const node of g.nodes().slice(0, 1)) {
+            total += node.length as i32;
+        }
+        let stopped: i32 = 0;
+        for (const node of g.nodes()) {
+            stopped += 1;
+            break;
+        }
+        total += stopped;
+    }
+    console.log(total);
+    console.log("assert:", 2200);
+    console.log(edges);
+    console.log("assert:", 1200);
+};

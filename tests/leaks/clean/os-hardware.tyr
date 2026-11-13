@@ -1,0 +1,47 @@
+// `cpus()` returns `CpuInfo[]`, the first `tyrus:os` array of a *struct*
+// element (each element owns a `model: string`), built via the same
+// out-param `TyrusArray` pattern as `process.argv` (`string[]`), registered
+// with `record_owned_native_result(result, Type::Array(Box::new(Type::Named
+// ("CpuInfo"))))`. `loadAvg()` returns `f64[]`, a `Copy` element array,
+// the simpler, already-well-trodden case, included here for symmetry.
+// `totalMem`/`freeMem`/`uptime` are plain `u64`, no allocation.
+// `battery()` returns `BatteryInfo?`, the box wraps a struct with two
+// further nested `u32?` fields (`timeToFull`/`timeToEmpty`), each boxed
+// again on its own. `cpuTemp()` returns a boxed `f32?`, the simplest
+// optional-of-scalar case.
+import { BatteryInfo, CpuInfo, battery, cpuTemp, cpus, freeMem, loadAvg, totalMem, uptime } from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const cores: CpuInfo[] = cpus();
+        for (let j: usize = 0; j < cores.length; j += 1) {
+            total += cores[j].model.length;
+            total += cores[j].speed as usize;
+        }
+
+        const load: f64[] = loadAvg();
+        total += load.length;
+
+        total += totalMem() as usize;
+        total += freeMem() as usize;
+        total += uptime() as usize;
+
+        const info: BatteryInfo? = battery();
+        if (info) {
+            total += info.charging ? 1 : 0;
+        }
+
+        const celsius: f32? = cpuTemp("celsius");
+        if (celsius) {
+            total += 1;
+        }
+
+        const defaultUnit: f32? = cpuTemp();
+        if (defaultUnit) {
+            total += 1;
+        }
+    }
+    console.log(total > 0);
+    console.log("assert:", true);
+};

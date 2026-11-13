@@ -1,0 +1,44 @@
+==================
+Comptime declarations and expression
+==================
+
+comptime function double(value: i32): i32 {
+  return value * 2;
+}
+
+comptime const mask = (): i32 => 3;
+const result = comptime(double(mask()));
+
+---
+
+(source_file
+  (declaration
+    (function_declaration
+      (identifier)
+      (parameters
+        (parameter
+          (identifier)
+          (primitive_type)))
+      (primitive_type)
+      (block
+        (return_statement
+          (binary_expression
+            (identifier)
+            (number))))))
+  (declaration
+    (comptime_arrow_declaration
+      (identifier)
+      (arrow_function
+        (parameters)
+        (primitive_type)
+        (number))))
+  (declaration
+    (variable_declaration
+      (identifier)
+      (comptime_expression
+        (call_expression
+          (identifier)
+          (arguments
+            (call_expression
+              (identifier)
+              (arguments))))))))

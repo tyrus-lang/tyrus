@@ -1,0 +1,43 @@
+// Regression for a real memory corruption, not just a leak: a `throws`
+// function's own scope-exit cleanup used to walk all the way down to scope 0
+// (the module-global scope) and free a top-level `const` array it never
+// referenced (`allowedRoles` here) which `main` then freed a second time
+// on its own exit. `free(): double free detected in tcache 2` when run
+// directly, not just flagged by valgrind. The bug fired on `setup`'s own
+// normal (non-throwing) return path, `"Ada"` satisfies `@minLength(3)`, so
+// the `catch` below never actually runs; it stays in the repro because it
+// was part of the original shape that reproduced the bug, and a second,
+// separate scope-cleanup path (the throw path) is worth exercising too even
+// though it is not what triggered this specific corruption.
+//
+// Fixed by `emit_owned_value_cleanups_to_depth`'s `current_emitting_function_
+// is_main` guard: any function other than `main` floors its own cleanup at
+// scope 1, never touching scope 0, since only `main` owns and releases
+// module globals (see `crates/tyrus-codegen/src/core.rs`). Was tracked in
+// `tests/leaks/CORRUPTION-KNOWN-ISSUES.md` before that fix landed; this file
+// replaces that entry now that the fix is confirmed and locked in.
+interface SignupInput {
+    @minLength(3)
+    name: string;
+}
+
+const allowedRoles: string[] = ["admin", "user"];
+
+const setup = (): void throws ValidationError => {
+    const input: SignupInput = {
+        name: "Ada",
+    };
+    console.log(input.name.length === 3);
+};
+
+const main = (): void => {
+    for (let i: i32 = 0; i < 200; i += 1) {
+        try {
+            setup();
+        } catch (e: ValidationError) {
+            console.log(e.message.length > 0);
+        }
+    }
+    console.log(allowedRoles.length === 2);
+    console.log("assert:", true);
+};

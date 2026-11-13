@@ -1,0 +1,34 @@
+// A `catch` handler that leaves by throwing a value of its own never released
+// the clone its binding owned, 19 bytes an iteration. All three emitters of an
+// async catch handler listed the exits that release it, and `throw` was in none
+// of the three lists, so it left by a branch that never reached the release at
+// the end of the block.
+//
+// Rethrowing the binding (`throw error;`) is deliberately not this case: the
+// value travels on to the next catch, and releasing it before that reader has
+// copied the strings out is a use-after-free, not a fix. It still leaks, and
+// `async-catch-binding-survives-a-throw-caught-inside-it.tyr` guards the other
+// side, a binding that must stay alive because the throw never left the handler.
+async function pause(): Promise<void> { return; }
+
+async function run(): Promise<usize> {
+    try {
+        try {
+            await pause();
+            throw "inner value".toUpperCase();
+        } catch (error: string) {
+            throw "from inner catch";
+        }
+    } catch (outer: string) {
+        return outer.length;
+    }
+}
+
+const main = async (): Promise<void> => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const step: usize = await run();
+        total += step;
+    }
+    console.log(total);
+};

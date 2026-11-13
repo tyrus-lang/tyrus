@@ -1,0 +1,29 @@
+// `tyrus:math` had zero coverage in this corpus despite allocating on both
+// sides of the C ABI boundary: `mean`/`median`/`mode`/`variance`/`stdDev`/
+// `percentile` each take an `f64[]` by value (an unbound literal, a bound
+// name, and a rebind below), and `primeFactors` builds a fresh `u64[]` via a
+// `Vec` and `mem::forget` (math.rs:451-486) that the caller must own and
+// free like any other native array result.
+import { mean, median, mode, variance, stdDev, percentile, primeFactors } from "tyrus:math";
+
+const main = (): void => {
+    let total: f64 = 0.0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += mean([1.0, 2.0, 3.0, 4.0]);
+
+        let sample: f64[] = [5.0, 3.0, 1.0, 4.0, 2.0];
+        total += median(sample);
+        total += mode(sample);
+        total += variance(sample);
+        total += stdDev(sample);
+        total += percentile(75.0, sample);
+
+        sample = [10.0, 20.0, 30.0];
+        total += mean(sample);
+
+        const factors: u64[] = primeFactors(360);
+        total += factors.length as f64;
+    }
+    console.log(total);
+    console.log("assert:", 7982.842712474632);
+};

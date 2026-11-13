@@ -1,0 +1,6 @@
+```tyrus
+type Point = {
+    x: i32;
+    y: i32;
+};
+```

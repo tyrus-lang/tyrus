@@ -1,0 +1,24 @@
+async function pause(): Promise<void> {
+    return;
+}
+
+async function exercise(): Promise<i32> {
+    let total: i32 = 0;
+    for (let r: i32 = 0; r < 4; r += 1) {
+        const label: string = "row".toUpperCase();
+        for (let i: i32 = 0; i < 3; i += 1) {
+            await pause();
+            total += (label.length as i32) + r * 10 + i;
+        }
+    }
+    return total;
+}
+
+const main = async (): Promise<void> => {
+    let result: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        result = await exercise();
+    }
+    console.log(result);
+    console.log("assert:", 228);
+};

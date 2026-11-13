@@ -1,0 +1,74 @@
+// A handler that sent an allocated text body freed it twice. `reply.send`
+// stores the string in the response, which outlives the handler and releases
+// the body itself; the handler then released the same string on its way out.
+// `finalize_response` reads the body in between, so the middle step is a read
+// of freed memory, and under AddressSanitizer the process stopped in the middle
+// of answering. That is why the symptom was a route that never replied rather
+// than a crash anyone could place: from outside, the request simply timed out.
+//
+// The response takes a reference of its own now. A `string` shares its buffer
+// by counting, so that is an increment for an allocated body and nothing at all
+// for one over `.rodata`, and both owners then release exactly what they hold.
+// Both shapes are here for that reason: `/note` sends a body built at run time
+// and `/plain` one that lives in the binary, and a share that got either case
+// wrong would show up as a double free on the first or a leak on the second.
+//
+// Reproducible from a `.tyr` program only because `tyrus:http` gained a client.
+// The note on `http-response-body-ownership` about nothing here being able to
+// issue the request predates `fetch`.
+//
+// The URLs are built by the caller and passed in rather than written inline as
+// `fetch.get(`${base}/note`)`, which is not a style choice: a template written
+// straight into a native call's argument list leaks, one string per call, and a
+// case that carried that as well would fail for a reason it is not about. That
+// defect is recorded separately.
+import { createRouter, fetch, HttpError, HttpReply, HttpRouter, HttpServer, HttpStatus, ServerOptions, TextBody } from "tyrus:http";
+
+async function readBoth(noteUrl: string, plainUrl: string): Promise<i32> {
+    try {
+        const note = await fetch.get(noteUrl);
+        const built: string = note.text();
+        const plain = await fetch.get(plainUrl);
+        const fixed: string = plain.text();
+        return built.length as i32 + fixed.length as i32;
+    } catch (error: HttpError) {
+        console.log(`the request failed: ${error.code}`);
+        return 0;
+    }
+}
+
+/// A loop of its own, because a loop that awaits cannot sit inside a `try`.
+async function readEveryTime(base: string): Promise<i32> {
+    let total: i32 = 0;
+    for (let index: i32 = 0; index < 10; index += 1) {
+        const one: i32 = await readBoth(`${base}/note`, `${base}/plain`);
+        total += one;
+    }
+    return total;
+}
+
+const main = async (): Promise<void> => {
+    const app: HttpRouter = createRouter();
+    app.get("/note", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            reply.status(HttpStatus.Ok).send(`got: ${"hello".toUpperCase()}`);
+        },
+    });
+    app.get("/plain", {
+        response: { 200: TextBody },
+        handler: (request, reply): void => {
+            reply.status(HttpStatus.Ok).send("plain");
+        },
+    });
+    let total: i32 = 0;
+    const server = app.listen(0, { host: "127.0.0.1" }) onfail {
+        console.log(`the server did not start: ${server.code}`);
+        return;
+    };
+        const base: string = `http://127.0.0.1:${server.port()}`;
+        total = await readEveryTime(base);
+        await server.close();
+    console.log(total);
+    console.log("assert:", 150);
+};

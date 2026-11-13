@@ -1,0 +1,26 @@
+// CLOSED, THOUGH NOT REPRODUCIBLE HERE: `HttpResponse.body` could hold text
+// the handler allocated (`reply.error(...)`, a validation failure, a JSON
+// reply body) or text that lives in `.rodata` (codegen's empty `send()`, a
+// route that never calls those). Nothing in a bare pointer told the two
+// apart, so `finalize_response` never freed it: freeing unconditionally would
+// have crashed on the static case. Every allocated response body leaked, one
+// per request, for the life of the server.
+//
+// The string representation answers the question the pointer could not. A
+// value carries an ownership bit, releasing one that owns nothing is a no-op,
+// and so `finalize_response` now simply releases both `.body` and `.cookies`
+// (`crates/tyrus-runtime/src/http.rs`). The same pass fixed a read of
+// `.cookies` that happened *after* it was released.
+//
+// This file remains a documentation placeholder, not a reproduction: the leak
+// only fires on a real request round-tripping through axum's `invoke` (see
+// `tyrus_runtime::tests::echo_request_parts_handler`, `validation_error_handler`
+// and `expected_error_handler` in `crates/tyrus-runtime/tests/unit/http_runtime.rs`,
+// driven by `tower::ServiceExt::oneshot`). `tyrus:http` exposes a server, not a
+// client, so no `.tyr` program compiled and run standalone by
+// `scripts/leak-check` can issue that request. It is verified for real under
+// AddressSanitizer via `scripts/sanitizers`, which does drive the pipeline.
+const main = (): void => {
+    console.log("closed: http-response-body-ownership is verified by scripts/sanitizers");
+    console.log("assert:", "closed: http-response-body-ownership is verified by scripts/sanitizers");
+};

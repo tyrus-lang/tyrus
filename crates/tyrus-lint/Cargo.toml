@@ -1,0 +1,16 @@
+[package]
+name = "tyrus-lint"
+version.workspace = true
+edition.workspace = true
+description = "Tyrus linter, static analysis built on the Tyrus compiler pipeline."
+authors = ["tyrus contributors"]
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tyrus-core = { path = "../tyrus-core" }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

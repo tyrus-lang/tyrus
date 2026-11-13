@@ -1,0 +1,183 @@
+==================
+Try followed by a spaced sign
+==================
+
+const a = f(x)? - 1;
+const b = f(x)? + 1;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (binary_expression
+        left: (try_expression
+          (call_expression
+            function: (identifier)
+            arguments: (arguments
+              (identifier))))
+        right: (number))))
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (binary_expression
+        left: (try_expression
+          (call_expression
+            function: (identifier)
+            arguments: (arguments
+              (identifier))))
+        right: (number)))))
+
+==================
+Try followed by an unspaced sign
+==================
+
+const a = f(x)?-1;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (binary_expression
+        left: (try_expression
+          (call_expression
+            function: (identifier)
+            arguments: (arguments
+              (identifier))))
+        right: (number)))))
+
+==================
+A unary sign in a ternary branch
+==================
+
+const a = c ? -1 : 2;
+const b = c ? +1 : 2;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (identifier)
+        (unary_expression
+          (number))
+        (number))))
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (identifier)
+        (unary_expression
+          (number))
+        (number)))))
+
+==================
+Compact ternary
+==================
+
+const a = c?1:2;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (identifier)
+        (number)
+        (number)))))
+
+==================
+Try with a sign inside a ternary branch keeps the outer colon
+==================
+
+const a = c ? f(x)? - 1 : 2;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (ternary_expression
+        (identifier)
+        (binary_expression
+          left: (try_expression
+            (call_expression
+              function: (identifier)
+              arguments: (arguments
+                (identifier))))
+          right: (number))
+        (number)))))
+
+==================
+Optional arrow parameter
+==================
+
+const f = (a?: i32): i32 => 1;
+const g = (a?, b) => 1;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters
+          (parameter
+            name: (identifier)
+            type: (primitive_type)))
+        return_type: (primitive_type)
+        body: (number))))
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (arrow_function
+        parameters: (parameters
+          (parameter
+            name: (identifier))
+          (parameter
+            name: (identifier)))
+        body: (number)))))
+
+==================
+Parenthesized try is not a parameter
+==================
+
+const x = (value?);
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (parenthesized_expression
+        (try_expression
+          (identifier))))))
+
+==================
+Fallible cast against a try on a cast
+==================
+
+const n: i32? = wide as i32?;
+const m = (v as i32)?;
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      type: (optional_type
+        (primitive_type))
+      value: (fallible_as_expression
+        (identifier)
+        (primitive_type))))
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (try_expression
+        (parenthesized_expression
+          (as_expression
+            (identifier)
+            (primitive_type)))))))

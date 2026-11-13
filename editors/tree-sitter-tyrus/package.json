@@ -1,0 +1,15 @@
+{
+  "name": "tree-sitter-tyrus",
+  "version": "0.1.0",
+  "description": "Tyrus grammar for tree-sitter (Zed, Neovim, ...).",
+  "license": "MIT",
+  "main": "bindings/node",
+  "keywords": [
+    "parser",
+    "tree-sitter",
+    "tyrus"
+  ],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24"
+  }
+}

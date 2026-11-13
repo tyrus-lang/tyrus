@@ -1,0 +1,27 @@
+// Guards the shape the run-time ownership mode exists for, rather than a past
+// byte count: a `string[]` mutated on only *some* runs.
+//
+// Each iteration below builds a static literal and pushes into it only half the
+// time. A compile-time release plan sees one `push` in the AST and must commit
+// to one answer for every run: releasing the elements corrupts the iterations
+// that never pushed (`free` on the literal's `.rodata` pointers), and not
+// releasing them leaks the clones on the iterations that did. Only reading the
+// mode back at run time gets both right, which is why `string_array_ownership`
+// stores it instead of deciding during compilation.
+//
+// The `else` branch matters as much as the `if`: it is the path that must come
+// out of the loop having freed the buffer and nothing else.
+//
+// Expected output is 300.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let labels: string[] = ["static"];
+        if (i < 100) {
+            labels.push(i.toString());
+        }
+        total += labels.length;
+    }
+    console.log(total);
+    console.log("assert:", 300);
+};

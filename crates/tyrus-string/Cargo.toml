@@ -1,0 +1,13 @@
+[package]
+name = "tyrus-string"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The native representation of a Tyrus string: an unterminated UTF-8 buffer delimited by the lengths the value carries."
+
+[dependencies]
+tyrus-validators = { path = "../tyrus-validators" }
+
+[lints]
+workspace = true

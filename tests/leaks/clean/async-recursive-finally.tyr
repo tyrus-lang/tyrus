@@ -1,0 +1,110 @@
+async function pause(): Promise<void> {
+    return;
+}
+
+async function fail(): Promise<void> throws Error {
+    const failure: Error = { message: "failure", code: "ERR_FAILURE" };
+    throw failure;
+}
+
+async function exercise(): Promise<i32> {
+    let total: i32 = 0;
+    let index: i32 = 0;
+    while (index < 2) {
+        index += 1;
+        try {
+            await fail();
+        } catch (error: Error) {
+            let observed: string = "initial".toUpperCase();
+            await pause();
+            observed = error.message.toLowerCase();
+            observed.toUpperCase();
+            total += 1;
+        } finally {
+            let cleanup: string = "cleanup".toUpperCase();
+            await pause();
+            cleanup = cleanup.toLowerCase();
+            await pause();
+            cleanup.toUpperCase();
+            total += 100;
+        }
+    }
+    return total;
+}
+
+async function exerciseTransfers(): Promise<i32> {
+    let total: i32 = 0;
+    let index: i32 = 0;
+    while (index < 3) {
+        index += 1;
+        try {
+            await pause();
+            if (index === 1) { continue; }
+            if (index === 3) { break; }
+            total += index;
+        } catch (error: Error) {
+            total -= 100;
+        } finally {
+            await pause();
+            total += 10;
+        }
+    }
+    return total;
+}
+
+async function rethrow(): Promise<void> throws Error {
+    let index: i32 = 0;
+    while (index < 1) {
+        index += 1;
+        try {
+            await fail();
+        } catch (error: Error) {
+            await pause();
+            throw error;
+        } finally {
+            await pause();
+        }
+    }
+}
+
+async function observeRethrow(): Promise<void> {
+    try {
+        await rethrow();
+    } catch (error: Error) {
+        error.message;
+    }
+}
+
+async function exerciseBranch(flag: boolean): Promise<i32> {
+    let result: i32 = 0;
+    if (flag) {
+        let text: string = await Promise.resolve<string>("then-owned");
+        text = text.toUpperCase();
+        await pause();
+        text.toLowerCase();
+        result = await Promise.resolve<i32>(7);
+    } else {
+        const text: string = await Promise.resolve<string>("else-owned");
+        text.toUpperCase();
+        result = await Promise.resolve<i32>(9);
+        await pause();
+    }
+    return result;
+}
+
+const main = async (): Promise<void> => {
+    let result: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const exercised: i32 = await exercise();
+        result = exercised;
+        const transferred: i32 = await exerciseTransfers();
+        result += transferred;
+        await observeRethrow();
+        const thenBranch: i32 = await exerciseBranch(true);
+        result += thenBranch;
+        const elseBranch: i32 = await exerciseBranch(false);
+        result += elseBranch;
+    }
+    console.log(result);
+    console.log("assert:", 250);
+};

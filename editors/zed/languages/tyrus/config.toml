@@ -1,0 +1,13 @@
+name = "tyrus"
+grammar = "tyrus"
+path_suffixes = ["tyrus"]
+line_comments = ["// "]
+autoclose_before = ";:.,=}])>"
+
+[brackets]
+"{" = "}"
+"[" = "]"
+"(" = ")"
+"\"" = "\""
+"'" = "'"
+"`" = "`"

@@ -1,0 +1,24 @@
+[package]
+name = "tyrus-fmt"
+version.workspace = true
+edition.workspace = true
+description = "Tyrus formatter, AST-based code formatter for the Tyrus language."
+authors = ["tyrus contributors"]
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tyrus-core = { path = "../tyrus-core" }
+serde.workspace = true
+serde_json.workspace = true
+
+[features]
+benchmark-internals = []
+
+[[bench]]
+name = "formatter"
+harness = false
+required-features = ["benchmark-internals"]
+
+[lints]
+workspace = true

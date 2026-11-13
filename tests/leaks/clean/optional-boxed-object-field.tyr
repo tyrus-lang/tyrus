@@ -1,0 +1,66 @@
+// Two bugs in one shape: a function returning `Account?` (an object with an
+// optional field) that builds the object in one arm of an `if` and bare
+// `return;`s in the other failed to compile at all, "invalid LLVM IR:
+// Instruction does not dominate all uses", because the object literal's own
+// `Fields`-plan pending registration stayed on the pre-box struct value, a
+// different SSA register than the box pointer everything downstream held, so
+// it was never forgotten by identity and was eventually swept from the
+// sibling `return;` branch, which does not dominate where it was defined.
+// Closed with `ReleasePlan::Box`: boxing a value that already carries its own
+// pending registration now re-registers that plan against the box itself.
+//
+// Stress-testing that fix surfaced a second, independent, non-leak bug:
+// `account?.nickname`, chaining into a field that is *itself* already
+// `string?`, malloc'd a second box around the field's own (already a
+// pointer) value instead of returning it directly, so every read through the
+// flattened `Optional<string>` type the caller expects saw one level of
+// indirection too many. No crash, no error: just garbage output where the
+// field's string should have been. Closed by skipping the extra box when the
+// field's declared type is already `Optional<_>`.
+//
+// Expected output is 600.
+interface Account {
+    id: i32;
+    nickname?: string;
+}
+
+const findAccount = (found: boolean): Account? => {
+    if (found) {
+        return { id: 1, nickname: "ada" };
+    }
+
+    return;
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const present: Account? = findAccount(true);
+        console.log(present?.nickname ?? "none");
+        console.log("assert:", "ada");
+        console.log(present?.id ?? -1);
+        console.log("assert:", 1);
+
+        const absent: Account? = findAccount(false);
+        console.log(absent?.nickname ?? "none");
+        console.log("assert:", "none");
+
+        // A field omitted entirely, distinct from the callee's absence path.
+        const partial: Account? = { id: 2 };
+        console.log(partial?.nickname ?? "none");
+        console.log("assert:", "none");
+
+        // Unbound temporary: never named, swept at end of scope.
+        findAccount(true);
+
+        // Rebind.
+        let rebound: Account? = findAccount(true);
+        rebound = findAccount(false);
+        console.log(rebound?.id ?? -1);
+        console.log("assert:", -1);
+
+        total += (present?.nickname ?? "").length;
+    }
+    console.log(total);
+    console.log("assert:", 600);
+};

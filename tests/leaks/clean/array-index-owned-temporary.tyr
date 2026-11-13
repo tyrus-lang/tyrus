@@ -1,0 +1,14 @@
+const getFirstArg = (): string => {
+    return process.argv[0];
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const arg: string = getFirstArg();
+        total += arg.length;
+        total += process.argv[0].length;
+    }
+    console.log(total > 0);
+    console.log("assert:", true);
+};

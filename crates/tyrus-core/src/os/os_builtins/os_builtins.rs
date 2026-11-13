@@ -1,0 +1,898 @@
+use super::*;
+
+#[allow(clippy::too_many_lines)]
+pub(crate) fn os_builtins() -> HashMap<String, ExportInfo> {
+    [
+        (
+            "EOL".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_EOL".to_string(),
+                ty: Type::Str,
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "platform".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_platform".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Named("OsPlatform".to_string())),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "OsPlatform".to_string(),
+            ExportInfo {
+                target: "OsPlatform".to_string(),
+                ty: Type::Named("OsPlatform".to_string()),
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: Some(os_platform_enum()),
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "arch".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_arch".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Named("OsArch".to_string())),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "OsArch".to_string(),
+            ExportInfo {
+                target: "OsArch".to_string(),
+                ty: Type::Named("OsArch".to_string()),
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: Some(os_arch_enum()),
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "hostname".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_hostname".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "release".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_release".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "systemName".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_systemName".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "locale".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_locale".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "language".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_language".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "userInfo".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_userInfo".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Named("UserInfo".to_string())),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "whoami".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_whoami".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Optional(Box::new(Type::Str))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "userName".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_userName".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "homeDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_homeDir".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "cacheDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_cacheDir".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "configDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_configDir".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "dataDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_dataDir".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "tempDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_tempDir".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "desktopDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_desktopDir".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Optional(Box::new(Type::Str))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "documentsDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_documentsDir".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Optional(Box::new(Type::Str))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "appDataDir".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_appDataDir".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Str],
+                    ret: Box::new(Type::Str),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "cpus".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_cpus".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Array(Box::new(Type::Named("CpuInfo".to_string())))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "totalMem".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_totalMem".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::U64),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "freeMem".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_freeMem".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::U64),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "uptime".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_uptime".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::U64),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "loadAvg".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_loadAvg".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Array(Box::new(Type::F64))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "battery".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_battery".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Optional(Box::new(Type::Named(
+                        "BatteryInfo".to_string(),
+                    )))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "cpuTemp".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_cpuTemp".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Union(vec![
+                        Type::Lit(Box::new(Expr::synthetic(ExprKind::StrLit(
+                            "celsius".to_string(),
+                        )))),
+                        Type::Lit(Box::new(Expr::synthetic(ExprKind::StrLit(
+                            "fahrenheit".to_string(),
+                        )))),
+                    ])],
+                    ret: Box::new(Type::Optional(Box::new(Type::F32))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "networkInterfaces".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_networkInterfaces".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Array(Box::new(Type::Named(
+                            "NetworkInterface".to_string(),
+                        )))),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "UserInfo".to_string(),
+            ExportInfo {
+                target: "UserInfo".to_string(),
+                ty: Type::Named("UserInfo".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::user_info_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "CpuInfo".to_string(),
+            ExportInfo {
+                target: "CpuInfo".to_string(),
+                ty: Type::Named("CpuInfo".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::cpu_info_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "BatteryInfo".to_string(),
+            ExportInfo {
+                target: "BatteryInfo".to_string(),
+                ty: Type::Named("BatteryInfo".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::battery_info_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "NetworkInterface".to_string(),
+            ExportInfo {
+                target: "NetworkInterface".to_string(),
+                ty: Type::Named("NetworkInterface".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::network_interface_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "OsError".to_string(),
+            ExportInfo {
+                target: "OsError".to_string(),
+                ty: Type::Named("OsError".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::os_error_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "NotifyOptions".to_string(),
+            ExportInfo {
+                target: "NotifyOptions".to_string(),
+                ty: Type::Named("NotifyOptions".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::notify_options_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "NotifyUrgency".to_string(),
+            ExportInfo {
+                target: "NotifyUrgency".to_string(),
+                ty: Type::Named("NotifyUrgency".to_string()),
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: Some(notify_urgency_enum()),
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "notify".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_notify".to_string(),
+                ty: Type::Function {
+                    params: vec![
+                        Type::Str,
+                        Type::Str,
+                        Type::Named("NotifyOptions".to_string()),
+                    ],
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Void),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "requestAttention".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_requestAttention".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Bool],
+                    ret: Box::new(Type::Void),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "revealInFolder".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_revealInFolder".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Str],
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Void),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "openUrl".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_openUrl".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Str],
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Void),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "trash".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_trash".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Str],
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Void),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "clipboardWrite".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_clipboardWrite".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Str],
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Void),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "clipboardRead".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_clipboardRead".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Optional(Box::new(Type::Str))),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "isDarkMode".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_isDarkMode".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Bool),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "terminalSize".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_terminalSize".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Optional(Box::new(Type::Tuple(vec![
+                        Type::U16,
+                        Type::U16,
+                    ])))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "isScreenLocked".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_isScreenLocked".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Bool),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "isSessionLocked".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_isSessionLocked".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Bool),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "preventSleep".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_preventSleep".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Void),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "allowSleep".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_allowSleep".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Result {
+                        success: Box::new(Type::Void),
+                        error: Box::new(Type::Named("OsError".to_string())),
+                    }),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "FontInfo".to_string(),
+            ExportInfo {
+                target: "FontInfo".to_string(),
+                ty: Type::Named("FontInfo".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::font_info_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "systemFonts".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_systemFonts".to_string(),
+                ty: Type::Function {
+                    params: Vec::new(),
+                    ret: Box::new(Type::Array(Box::new(Type::Named("FontInfo".to_string())))),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "Color".to_string(),
+            ExportInfo {
+                target: "Color".to_string(),
+                ty: Type::Named("Color".to_string()),
+                interface_fields: Some(crate::builtin_interfaces::color_fields()),
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "accessibleColorContrast".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_accessibleColorContrast".to_string(),
+                ty: Type::Function {
+                    params: vec![
+                        Type::Named("Color".to_string()),
+                        Type::Named("Color".to_string()),
+                    ],
+                    ret: Box::new(Type::Bool),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "SystemCapability".to_string(),
+            ExportInfo {
+                target: "SystemCapability".to_string(),
+                ty: Type::Named("SystemCapability".to_string()),
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: Some(system_capability_enum()),
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+        (
+            "hasCapability".to_string(),
+            ExportInfo {
+                target: "__tyrus_os_hasCapability".to_string(),
+                ty: Type::Function {
+                    params: vec![Type::Named("SystemCapability".to_string())],
+                    ret: Box::new(Type::Bool),
+                },
+                interface_fields: None,
+                behavior_info: None,
+                type_alias_ty: None,
+                enum_info: None,
+                throws: Vec::new(),
+                db_model: None,
+            },
+        ),
+    ]
+    .into_iter()
+    .collect()
+}

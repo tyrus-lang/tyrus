@@ -1,0 +1,58 @@
+// Compression streams: owned `TransformStream` handles returned by
+// `compressionStream` and `decompressionStream`, chunks written and piped
+// through them, a stream refused by its configuration, and a decoder failing
+// mid-stream. Every handle and every chunk is released once.
+import { CompressError, CompressFormat, CompressOptions, DecompressOptions, compressionStream, decompressionStream } from "tyrus:compress";
+import { StreamError, TransformStream } from "tyrus:stream";
+
+const bytesOf = (round: i32): u8[] => {
+    let bytes: u8[] = [116, 121, 114, 117, 115];
+    bytes.push(round as u8);
+    return bytes;
+};
+
+const roundTrip = async (round: i32, format: CompressFormat): Promise<void> => {
+    const packer = compressionStream(format, { level: 6 });
+    const options: DecompressOptions = { format: format, maxRatio: 1_000 };
+    const unpacker = decompressionStream(options);
+    await packer.writable.write(bytesOf(round));
+    await packer.writable.write([1, 2, 3]);
+    await packer.writable.close();
+    await packer.readable.pipeTo(unpacker.writable);
+    const first: u8[]? = await unpacker.readable.read();
+    print((first ?? []).length);
+};
+
+const refused = async (): Promise<void> => {
+    const level: i32 = 12;
+    const packer = compressionStream(CompressFormat.Brotli, { level: level });
+    try {
+        const first: u8[]? = await packer.readable.read();
+        print((first ?? []).length);
+    } catch (error: CompressError) {
+        print(error.code);
+    }
+};
+
+const garbage = async (): Promise<void> => {
+    const unpacker = decompressionStream();
+    try {
+        await unpacker.writable.write([31, 139, 99, 99, 99, 99, 99, 99, 99, 99, 99]);
+        await unpacker.writable.close();
+        const first: u8[]? = await unpacker.readable.read();
+        print((first ?? []).length);
+    } catch (error: CompressError | StreamError) {
+        print(error.code);
+    }
+};
+
+const main = async (): Promise<void> => {
+    const formats: CompressFormat[] = [CompressFormat.Gzip, CompressFormat.Deflate, CompressFormat.DeflateRaw, CompressFormat.Brotli];
+    for (let round = 0; round < 3; round += 1) {
+        for (const format of formats) {
+            await roundTrip(round, format);
+        }
+        await refused();
+        await garbage();
+    }
+};

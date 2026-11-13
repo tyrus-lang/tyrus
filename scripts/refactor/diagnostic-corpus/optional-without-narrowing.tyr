@@ -1,0 +1,7 @@
+const find = (values: i32[]): i32? => values.first();
+
+const main = (): void => {
+    const value: i32? = find([1, 2, 3]);
+    const doubled: i32 = value * 2;
+    console.log(doubled);
+};

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Runs the REPL's leak regression test (`repl_leak_loop`) under valgrind.
+#
+# Split out of `scripts/leak-check` because it, like `scripts/leak-check-jit`,
+# takes ~9 minutes regardless of what changed, bundling it into every
+# `.tyr`-corpus run made even a single-category check
+# (`scripts/leak-check clean NAME`) pay that cost. Only relevant when
+# `src/repl/repl.rs` or the shared JIT path in `src/compile/compile.rs` changes; run it
+# then, and as part of `scripts/validate`'s full gate.
+#
+# Usage:
+#   scripts/leak-check-repl
+
+set -uo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+if ! command -v valgrind >/dev/null 2>&1; then
+    echo "valgrind is not installed; skipping the REPL leak check." >&2
+    echo "Install it to run this check: apt-get install valgrind" >&2
+    exit 0
+fi
+
+# shellcheck source=leak-check-rust-lib.sh
+source "${project_dir}/scripts/leak-check-rust-lib.sh"
+
+failures=()
+
+echo "==> REPL leak test"
+run_rust_leak_test "repl_leak_loop"
+
+if [[ ${#failures[@]} -gt 0 ]]; then
+    echo
+    printf 'FAILED:\n' >&2
+    printf '  - %s\n' "${failures[@]}" >&2
+    exit 1
+fi
+
+echo
+echo "REPL leak test is as expected."

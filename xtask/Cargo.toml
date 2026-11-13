@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Workspace automation: generates per-editor artifacts from the compiler lexicon."
+
+[dependencies]
+tyrus-core = { path = "../crates/tyrus-core" }
+
+[lints]
+workspace = true

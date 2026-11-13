@@ -1,0 +1,4 @@
+const main = (): void => {
+    const small: i8 = 300;
+    console.log(small);
+};

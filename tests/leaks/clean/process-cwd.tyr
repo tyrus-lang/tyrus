@@ -1,0 +1,19 @@
+// `process.cwd()` allocates through `crate::strings::alloc_string` (see
+// `crates/tyrus-runtime/src/process.rs::tyrus_process_cwd`) and is registered
+// via `record_owned_native_result(result, Type::Str)` in
+// `crates/tyrus-codegen/src/process.rs::emit_process_cwd`, the same mechanism
+// covered by `os-native-string-methods.tyr`. `process.pid`/`process.ppid`
+// (plain `u32`) and `process.uptime()` (plain `u64`) are not covered here,
+// neither allocates.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        console.log(process.cwd().length);
+
+        let dir: string = process.cwd();
+        total += dir.length;
+        dir = process.cwd();
+        total += dir.length;
+    }
+    console.log(total);
+};

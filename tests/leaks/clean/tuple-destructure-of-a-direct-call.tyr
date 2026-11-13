@@ -1,0 +1,27 @@
+// `const [a, b] = f();`, destructuring the direct return of a call whose
+// tuple carries an owned `string`, left the call's own registered ownership
+// (`record_owned_native_result`) untransferred: `ArrayDestructure`'s codegen
+// only ever copied fields out with `build_extract_value` and never claimed,
+// transferred, or discarded the source registration. The entry stayed
+// pending until whatever next called `discard_owned_native_result`, a bare
+// expression statement, most commonly, freed it through a *stale* LLVM
+// value reference. Within the same function and block that was merely an
+// early, silent free of a string a later read never happened to reach in
+// this file's shapes; across a function boundary, this destructure as the
+// last statement of an imported, exported function, immediately followed by
+// another top-level function's own codegen, the stale reference no longer
+// dominated anything, and the LLVM verifier rejected the module outright:
+// "Instruction does not dominate all uses". Closed by taking the tuple's
+// registered plan at the destructure site and redistributing it per
+// element, each non-`Copy` binding becomes its own owner, released at its
+// own scope exit, the same way a field extracted out of an object literal
+// already claims what it consumes.
+const main = (): void => {
+    const parseStatus = (): [i32, string] => [200, "ok"];
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const [code, message] = parseStatus();
+        total += code + (message.length as i32);
+    }
+    console.log(total);
+};

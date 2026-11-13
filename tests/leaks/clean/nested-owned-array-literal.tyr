@@ -1,0 +1,46 @@
+// A `string[]` field built from individually-allocating elements
+// (`["a".toUpperCase(), "b".toUpperCase()]`), returned inside an object
+// literal from a plain (non-async) function, leaked both the array's buffer
+// and every element.
+//
+// A `return` of a value whose type is `async_owned_value_supported` clones
+// it into a fresh slot and releases the *source* via
+// `emit_async_cleanup_source_expression`, so the caller gets an independent
+// copy. That cleanup's own `Type::Array(Str)` arm only recognized two
+// shapes for what a source array's ownership is: a literal of every element
+// a static `StrLit` (`static_string_array_frame_literal`, freed as a bare
+// buffer, nothing owned inside), or a single call already known to return an
+// owned array (`.split()`, a user function, ...). An array literal built
+// from several individually-allocating elements, a `string[]` field inside
+// an object literal, most commonly, was neither: not all-static, and not
+// itself a single owned-returning call. `async_string_array_ownership_mode`
+// answered "unrecognized" for it, so nothing freed the source at all, the
+// caller's independent clone was properly released, but the original never
+// was.
+//
+// Closed by recognizing this third shape directly: an array literal where
+// every element is individually provable as an allocation via the same
+// check (`async_owned_string_expression`) already used per-call-site
+// elsewhere, given the identical release a method-call-sourced array
+// already gets (free the buffer and every element, not just the buffer).
+// Confirmed at two levels of nesting, an object holding an array of
+// objects holding a nested array of tags, each holding its own `string[]`,
+// and through rebind, with valgrind reporting zero heap blocks in use at
+// exit at both depths, not just zero bytes "definitely lost".
+interface Tag {
+    names: string[];
+}
+
+const makeTag = (): Tag => {
+    return { names: ["x".toUpperCase(), "y".toUpperCase()] };
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const tag = makeTag();
+        total += tag.names.length;
+    }
+    console.log(total);
+    console.log("assert:", 400);
+};

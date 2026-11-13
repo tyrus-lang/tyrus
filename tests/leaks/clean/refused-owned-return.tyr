@@ -1,0 +1,61 @@
+// Per-path ownership, decided at runtime.
+//
+// `conditional` allocates a fresh `Map` on one path and returns a parameter on
+// the other. No static analysis over the call site can tell which path a
+// given call took, so the callee tells the caller itself: a thread-local
+// `i1` (`tyrus.return.owned`) is written at each `return`, `true` for the
+// fresh allocation, `false` for the borrowed parameter, and the caller reads
+// it immediately after the call, a load that trivially dominates everything
+// after it since the callee's return always dominates the call site. The
+// caller frees only when the bit says so, through a release kept separate
+// from `ReleasePlan` (`conditionally_owned_vars`, tracked by IR bit rather
+// than by static plan) so a function proven all-or-nothing owned is
+// unaffected by this path.
+//
+// A function only qualifies when its `return`s are a genuine mix of owned and
+// borrowed provenance, classified per branch of an `if`/`else` rather than by
+// an end-of-function merge, an early version of the analysis shared one
+// `owned` set across sibling branches and would have let an allocation named
+// `x` in one branch vouch for a same-named, differently-provenanced `x` in
+// another: a double free rather than a leak, caught before it was ever built.
+//
+// Building this found a second, real double free: reassigning a binding that
+// already held a conditionally-owned value (`held = conditional(...)` a
+// second time) segfaulted. The existing native-ownership reassignment path
+// only releases a binding's previous value when the *new* value is itself a
+// pending native-owned result; a conditionally-owned result is tracked in a
+// separate pending list, so that path never saw it, never freed the old
+// value, and never claimed the new one, which was then swept as an
+// abandoned temporary by the same generic cleanup that frees unbound owned
+// call results, while the binding's tracking entry still pointed at the old,
+// now-reused bit. Fixed by giving reassignment its own conditional-ownership
+// path, mirroring the native one: release whatever the binding held under its
+// own recorded bit before the slot is overwritten, then claim the new
+// pending result.
+//
+// What this does not close: a conditionally-owned result returned onward by
+// a second function (an `inner = conditional(...); return inner;` wrapper)
+// is invisible to the wrapper's own return analysis, since `inner` was bound
+// from a call rather than a literal allocation. The wrapper is classified as
+// borrowed and the caller never claims what it hands back. See
+// `conditionally-owned-return-not-propagated` for that shape, measured on
+// its own.
+const conditional = (flag: boolean, source: Map<string, i32>): Map<string, i32> => {
+    if (flag) {
+        return source;
+    }
+    const fresh = Map<string, i32>();
+    fresh.set("b", 2);
+    return fresh;
+};
+
+const main = (): void => {
+    const shared = Map<string, i32>();
+    shared.set("a", 1);
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += conditional(false, shared).size;
+    }
+    console.log(total);
+    console.log("assert:", 200);
+};

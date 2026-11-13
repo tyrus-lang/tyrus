@@ -1,0 +1,16 @@
+// Binding the result of an allocating array method to a name used to leak its
+// buffer (32 bytes per iteration) while the same call as a temporary was
+// released correctly.
+//
+// The cause was not the ownership machinery but the dispatch: a call with an
+// expected type (`const doubled: i32[] = ...`) is emitted by a different path
+// than a call without one, and only the second recorded ownership. Both do now.
+const main = (): void => {
+    const numbers: i32[] = [1, 2, 3];
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const doubled: i32[] = numbers.map((value: i32): i32 => value * 2);
+        total += doubled.length;
+    }
+    console.log(total);
+};

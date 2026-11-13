@@ -1,0 +1,117 @@
+async function pause(): Promise<void> {
+    return;
+}
+
+async function fail(index: i32): Promise<void> throws Error {
+    const failure: Error = { message: "failure", code: "ERR_FAILURE" };
+    throw failure;
+}
+
+async function exercise(): Promise<i32> {
+    let result: i32 = 0;
+    let index: i32 = 0;
+    while (index < 2) {
+        index += 1;
+        try {
+            await fail(index);
+        } catch (error: Error) {
+            let observed: string = "initial".toUpperCase();
+            await pause();
+            observed = error.message.toLowerCase();
+            await pause();
+            observed = observed.toUpperCase();
+            observed.toLowerCase();
+            result += 1;
+            if (index === 1) {
+                continue;
+            }
+        } finally {
+            result += 0;
+        }
+    }
+    return result;
+}
+
+async function rethrow(): Promise<void> throws Error {
+    let index: i32 = 0;
+    while (index < 1) {
+        index += 1;
+        try {
+            await fail(index);
+        } catch (error: Error) {
+            await pause();
+            throw error;
+        } finally {
+            index += 0;
+        }
+    }
+}
+
+async function observeRethrow(): Promise<void> {
+    try {
+        await rethrow();
+    } catch (error: Error) {
+        error.message;
+    }
+}
+
+async function catchRethrowLocally(): Promise<void> {
+    let index: i32 = 0;
+    while (index < 1) {
+        index += 1;
+        try {
+            await fail(index);
+        } catch (error: Error) {
+            await pause();
+            try {
+                throw error;
+            } catch (forwarded: Error) {
+                forwarded.message;
+            }
+        } finally {
+            index += 0;
+        }
+    }
+}
+
+async function conditionalRethrow(shouldRethrow: boolean): Promise<void> throws Error {
+    let index: i32 = 0;
+    while (index < 1) {
+        index += 1;
+        try {
+            await fail(index);
+        } catch (error: Error) {
+            await pause();
+            if (shouldRethrow) {
+                throw error;
+            }
+        } finally {
+            index += 0;
+        }
+    }
+}
+
+async function observeConditionalRethrow(): Promise<void> {
+    try {
+        await conditionalRethrow(false);
+    } catch (error: Error) {
+        error.message;
+    }
+    try {
+        await conditionalRethrow(true);
+    } catch (error: Error) {
+        error.message;
+    }
+}
+
+const main = async (): Promise<void> => {
+    let result: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        result = await exercise();
+        await observeRethrow();
+        await catchRethrowLocally();
+        await observeConditionalRethrow();
+    }
+    console.log(result);
+    console.log("assert:", 2);
+};

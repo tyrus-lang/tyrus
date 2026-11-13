@@ -1,0 +1,38 @@
+// `Map.keys()` / `Map.values()` / `Set.values()` leaked their array buffers.
+//
+// Found while fixing `map-get-optional-box`, in the same dispatch function:
+// `emit_map_method`/`emit_set_method` build the result array through
+// `emit_collection_array`, which allocates a fresh buffer the same way an
+// allocating array method (`.map()`, `.filter()`, ...) does, but those are
+// claimed at their own call site in `emit_method_call`, right after
+// `emit_array_method` returns, gated on `array_method_allocates(method)`.
+// Map and Set dispatch to `emit_map_method`/`emit_set_method` instead, and
+// returned directly from there without ever passing through that check, so
+// `keys` and `values` (Map) and `values` (Set) allocated and nothing claimed
+// it. Measured at 12 bytes/iteration for one `keys()` plus one `values()`
+// call over a one-entry `Map<string, i32>`.
+//
+// Closed the same way `map-get-optional-box` claimed `get`'s box: registered
+// where the method is dispatched, with `Type::Array(key)` for `keys` and
+// `Type::Array(value)` for `values`, `ReleasePlan::Deep` by default, the
+// same plan the array-allocating-method path already uses for an identical
+// shape. `entries` shares the same root cause for its own tuple array, plus
+// two more buffers underneath it (its own key and value arrays it builds and
+// never frees), and is deliberately not touched here, see
+// `map-entries-buffers` for that one on its own, since a released tuple's
+// own owned parts may need `Deep` to recurse into them differently than the
+// scalar case closed here.
+const main = (): void => {
+    const shared = Map<string, i32>();
+    shared.set("a", 1);
+    const s = Set<string>();
+    s.add("x");
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += shared.keys().length;
+        total += shared.values().length;
+        total += s.values().length;
+    }
+    console.log(total);
+    console.log("assert:", 600);
+};

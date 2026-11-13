@@ -1,0 +1,33 @@
+// Found implementing `cross-platform-path-resolution.md`: `readFileSync`'s
+// returned buffer (a fresh `calloc`) was never registered as owned, nothing
+// covers a native `FnCall` outside a small fixed list of already-handled
+// shapes, and `__tyrus_fs_readFileSync` was not one of them. Every call
+// leaked its content buffer, in a loop or not, bound or discarded. Closed by
+// registering the result the same way `emit_read_file_sync`'s own call site
+// already dispatches (`record_owned_native_result(result, Type::Str)`,
+// mirroring how a template literal's own buffer claims itself).
+//
+// Also exercises the path-resolution feature itself: every read/write below
+// goes through `tyrus_fs_resolve_path` (an internal, non-tyrus-value buffer
+// freed immediately after `fopen`, never part of this leak) via `./` and a
+// `sub/../` segment that collapses back to the same file without requiring
+// `sub` to exist on disk.
+//
+// Covers: the loop case, an unbound temporary, a bound name, and a rebind.
+import { readFileSync, writeFileSync, type FsError } from "tyrus:fs";
+
+const main = (): void => {
+    for (let i: i32 = 0; i < 200; i += 1) {
+        try {
+            writeFileSync("./message.txt", "hello from tyrus");
+            console.log(readFileSync("message.txt").length);
+            console.log("assert:", 16);
+            let content: string = readFileSync("./message.txt");
+            console.log(content.length);
+            console.log("assert:", 16);
+            content = readFileSync("sub/../message.txt");
+            console.log(content.length);
+            console.log("assert:", 16);
+        } catch (e: FsError) {}
+    }
+};

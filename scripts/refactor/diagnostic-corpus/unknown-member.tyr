@@ -1,0 +1,9 @@
+interface Point {
+    x: i32;
+    y: i32;
+}
+
+const main = (): void => {
+    const origin: Point = { x: 0, y: 0 };
+    console.log(origin.z);
+};

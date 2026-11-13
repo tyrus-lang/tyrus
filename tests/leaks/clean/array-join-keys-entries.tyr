@@ -1,0 +1,38 @@
+// `join` builds a fresh `string` (its resolved return type is `Str`, not
+// `Array`/`Tuple`, so the registration call site's own type filter excluded
+// it even after the method name was allow-listed) and `keys`/`entries` build
+// fresh arrays, all three were missing from `array_method_allocates` and
+// leaked unconditionally, whether bound, discarded, or rebound.
+//
+// `entries()` needed a second, separate fix: it copies each element's value
+// into a fresh `[usize, T]` tuple, which for a non-`Copy` `T` is a pointer
+// copy, an alias of the receiver's own element, never a clone. Claiming the
+// result as `Deep` (as every other method here does) recurses into that
+// alias: a segfault freeing a `.rodata` address for the static-string
+// receiver below, and a double free for the receiver built from
+// `toUpperCase()` once its own cleanup runs. Both are exercised here.
+//
+// Expected output is 3600.
+const main = (): void => {
+    const words: string[] = ["a", "b", "c"];
+    const computed: string[] = ["a".toUpperCase(), "b".toUpperCase()];
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const joined: string = words.join(",");
+        const idx: usize[] = words.keys();
+        const pairs: [usize, string][] = words.entries();
+        const pairs2: [usize, string][] = computed.entries();
+        total += joined.length + idx.length + pairs.length + pairs2.length;
+        // Unbound temporaries: never named, swept at end of scope.
+        words.join("-");
+        words.keys();
+        words.entries();
+        computed.entries();
+        // Rebind.
+        let rejoined: string = words.join(":");
+        rejoined = words.join(",");
+        total += rejoined.length;
+    }
+    console.log(total);
+    console.log("assert:", 3600);
+};

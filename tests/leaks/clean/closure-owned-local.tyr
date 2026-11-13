@@ -1,0 +1,33 @@
+// A closure's own locals were never released. Every cleanup walk stops at scope
+// 1 when the function being emitted is not `main`, since scope 0 holds the
+// module globals and only `main` may free those, and a closure body left its
+// locals in scope 0: a named function released `const held: string =
+// "ab".toUpperCase();` on the way out and an arrow with the identical line did
+// not. The body now gets a scope of its own, above the one holding the captures
+// and parameters, exactly as a named function pushes one before its body.
+//
+// The captures stay behind in the loop scope, which is what keeps this from
+// becoming a double free: the environment's destructor owns those, and the
+// second closure below captures one while also holding a local of its own.
+//
+// Expected output is 1890.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const captured: string = "xy".toUpperCase();
+        const localOnly = (): usize => {
+            const held: string = "ab".toUpperCase();
+            const items: string[] = [held, "cd".toUpperCase()];
+            return items.length + held.length;
+        };
+        const localAndCapture = (): usize => {
+            const held: string = `n${i}`;
+            return captured.length + held.length;
+        };
+
+        total += localOnly();
+        total += localAndCapture();
+    }
+    console.log(total);
+    console.log("assert:", 1890);
+};

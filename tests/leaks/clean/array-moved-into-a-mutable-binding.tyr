@@ -1,0 +1,58 @@
+// `let grown = numbers;` moved an array's header without moving its release, so
+// the source stayed the owner. That is invisible while both names point at the
+// same block, and a corruption the moment one of them reallocates: `push` frees
+// the old buffer, the destination gets a new one, and scope exit then frees the
+// source's stale pointer while the destination's buffer leaks. ASan reports it
+// as a double free.
+//
+// Found while preparing the `.rodata` promotion of global `const` arrays, which
+// is why the global case is here too: promoting a buffer into read-only memory
+// with this bug still open would have handed a `.rodata` pointer to `realloc`.
+// It reproduced identically without any global, a plain `const` local moved
+// into a `let`, and on the compiler installed before any of this work, so it
+// was never a regression of the promotion.
+//
+// The release now travels with the value, out of whichever of the four
+// registries described the source: the static plan in `owned_native_vars`, the
+// runtime mode byte of a `string[]`, the runtime bit of a `string`, or a call's
+// conditional bit. The two runtime forms share the source's own slot, because
+// the slot is what answers "release what?" and renaming does not change the
+// answer.
+//
+// Only a move hands the release over. A declaration that *clones* into its
+// destination leaves the source owning its own copy, so those paths are
+// deliberately untouched.
+const PRIMES: i32[] = [2, 3, 5];
+
+export function main(): void {
+    let fromGlobal: i32[] = PRIMES;
+    fromGlobal.push(7);
+    console.log(fromGlobal.length);
+    console.log("assert:", 4);
+
+    let copyElements: usize = 0;
+    let staticStrings: usize = 0;
+    let ownedStrings: usize = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const numbers: i32[] = [2, 3, 5];
+        let grown: i32[] = numbers;
+        grown.push(7);
+        copyElements += grown.length;
+
+        const statics: string[] = ["a", "b"];
+        let moreStatics: string[] = statics;
+        moreStatics.push("c");
+        staticStrings += moreStatics.length;
+
+        const computed: string[] = ["a".toUpperCase(), "b"];
+        let moreComputed: string[] = computed;
+        moreComputed.push("c".toUpperCase());
+        ownedStrings += moreComputed[0].length + moreComputed.length;
+    }
+    console.log(copyElements);
+    console.log("assert:", 800);
+    console.log(staticStrings);
+    console.log("assert:", 600);
+    console.log(ownedStrings);
+    console.log("assert:", 800);
+}

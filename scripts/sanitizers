@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+#
+# Runs the Rust workspace tests with AddressSanitizer and LeakSanitizer.
+#
+# AddressSanitizer enables LeakSanitizer's leak detection on Linux when
+# `detect_leaks=1` is set. The nightly toolchain and rust-src are required by
+# Rust's `-Zsanitizer` and `-Zbuild-std` options.
+#
+# Usage:
+#   scripts/sanitizers
+#   scripts/sanitizers --package tyrus-runtime
+#
+# Optional environment variables:
+#   TYRUS_SANITIZER_TOOLCHAIN  Rust toolchain (default: nightly)
+#   TYRUS_SANITIZER_TARGET     Rust target (default: host target)
+#   TYRUS_SANITIZER_TARGET_DIR Cargo target directory (default: target/sanitizers)
+#   TYRUS_SANITIZER_TEST_STACK Test worker stack in bytes (default: 8388608)
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+toolchain="${TYRUS_SANITIZER_TOOLCHAIN:-nightly}"
+target_dir="${TYRUS_SANITIZER_TARGET_DIR:-${project_dir}/target/sanitizers}"
+test_stack_size="${TYRUS_SANITIZER_TEST_STACK:-8388608}"
+if [[ ! ${test_stack_size} =~ ^[1-9][0-9]*$ ]]; then
+    echo "TYRUS_SANITIZER_TEST_STACK must be a positive integer byte count." >&2
+    exit 2
+fi
+run_stamp="$(date -u +%Y%m%d-%H%M%S)"
+report_dir="${target_dir}/reports/${run_stamp}-$$"
+mkdir -p "${report_dir}"
+
+report_exit() {
+    status=$?
+    trap - EXIT
+    if [[ ${status} -ne 0 ]]; then
+        echo "Sanitizer run failed. Reports and step logs are in: ${report_dir}" >&2
+    elif compgen -G "${report_dir}/*" >/dev/null; then
+        echo "Sanitizer reports: ${report_dir}"
+    fi
+    exit "${status}"
+}
+trap report_exit EXIT
+
+# The sanitizers write their own findings to ${report_dir} through `log_path`,
+# but a test that fails an assertion writes nothing there, and the run then
+# points at an empty directory. Every step's output is kept as a log next to the
+# reports so the failure that actually happened is still readable afterwards.
+run_step() {
+    step_name=$1
+    shift
+    "$@" 2>&1 | tee "${report_dir}/${step_name}.log"
+    return "${PIPESTATUS[0]}"
+}
+
+if ! command -v rustup >/dev/null 2>&1; then
+    echo "rustup is required to run sanitizer builds." >&2
+    exit 1
+fi
+
+if ! rustup run "${toolchain}" rustc --version >/dev/null 2>&1; then
+    echo "Rust toolchain '${toolchain}' is not installed." >&2
+    echo "Install it with: rustup toolchain install ${toolchain}" >&2
+    exit 1
+fi
+
+target="${TYRUS_SANITIZER_TARGET:-}"
+if [[ -z ${target} ]]; then
+    target="$(rustup run "${toolchain}" rustc -vV | sed -n 's/^host: //p')"
+fi
+
+if [[ -z ${target} ]]; then
+    echo "Could not determine the Rust target for toolchain '${toolchain}'." >&2
+    exit 1
+fi
+
+if ! rustup run "${toolchain}" rustup component list --installed 2>/dev/null | grep -q '^rust-src'; then
+    echo "The '${toolchain}' toolchain requires the rust-src component." >&2
+    echo "Install it with: rustup component add rust-src --toolchain ${toolchain}" >&2
+    exit 1
+fi
+
+echo "==> Running AddressSanitizer + LeakSanitizer"
+echo "    toolchain: ${toolchain}"
+echo "    target:    ${target}"
+echo "    directory: ${target_dir}"
+echo "    reports:   ${report_dir}"
+echo "    threads:   1 for in-process JIT tests; parallel elsewhere"
+echo "    JIT stack: ${test_stack_size} bytes per test worker"
+
+test_scope=(--workspace)
+for arg in "$@"; do
+    case "${arg}" in
+        --package|-p|--workspace|--exclude)
+            test_scope=()
+            break
+            ;;
+    esac
+done
+
+# Without a symbolizer the reports are raw addresses, which say nothing about
+# which allocation leaked. The plain `llvm-symbolizer` name is frequently
+# absent on distributions that ship only the version-suffixed binaries, so the
+# suffixed ones are accepted too, and a run with none of them says so instead
+# of producing a report nobody can read.
+if [[ -z ${ASAN_SYMBOLIZER_PATH:-} ]]; then
+    for candidate in llvm-symbolizer-23 llvm-symbolizer llvm-symbolizer-18 llvm-symbolizer-17; do
+        if command -v "${candidate}" >/dev/null 2>&1; then
+            ASAN_SYMBOLIZER_PATH="$(command -v "${candidate}")"
+            break
+        fi
+    done
+fi
+if [[ -n ${ASAN_SYMBOLIZER_PATH:-} ]]; then
+    export ASAN_SYMBOLIZER_PATH
+    echo "    symbolizer: ${ASAN_SYMBOLIZER_PATH}"
+else
+    echo "warning: no llvm-symbolizer found; sanitizer reports will carry raw addresses." >&2
+    echo "         install LLVM, or set ASAN_SYMBOLIZER_PATH to the binary to use." >&2
+fi
+
+RUSTFLAGS="${RUSTFLAGS:-} -Zsanitizer=address"
+ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:halt_on_error=1}"
+LSAN_OPTIONS="${LSAN_OPTIONS:-halt_on_error=1}"
+if [[ ${ASAN_OPTIONS} != *log_path=* ]]; then
+    ASAN_OPTIONS="${ASAN_OPTIONS}:log_path=${report_dir}/address"
+fi
+if [[ ${LSAN_OPTIONS} != *log_path=* ]]; then
+    LSAN_OPTIONS="${LSAN_OPTIONS}:log_path=${report_dir}/leak"
+fi
+TYRUS_LINK_ADDRESS_SANITIZER=1
+CARGO_TARGET_DIR="${target_dir}"
+export RUSTFLAGS ASAN_OPTIONS LSAN_OPTIONS TYRUS_LINK_ADDRESS_SANITIZER CARGO_TARGET_DIR
+
+# The same opt-out `scripts/leak-check` uses, and for the same reason: neither
+# tool can see through mimalloc's arena. It matters more here than there,
+# because ASan does not merely lose visibility, mimalloc's process
+# initialization calls `clock_gettime` through ASan's interceptor before ASan
+# has finished installing it, and the null pointer crashes the binary before a
+# single test runs.
+sanitizer_cargo=(
+    cargo "+${toolchain}" test
+    -Zbuild-std
+    --target "${target}"
+)
+sanitizer_runtime_cargo=(
+    "${sanitizer_cargo[@]}"
+    --features tyrus-runtime/system-allocator
+)
+
+# `build.rs` force-links the object files of `libtyrus_runtime.a` so the
+# in-process JIT can resolve `tyrus_*` symbols by name, and it aborts when that
+# staticlib is missing. Cargo only produces it when something asks for the
+# staticlib crate type explicitly; nothing in the test commands below does, so a
+# sanitizer target directory that has never seen one fails the build outright:
+#
+#   tyrus-runtime staticlib is required for JIT symbol resolution
+#
+# Build it first, with the same toolchain, flags and target as the run, the
+# objects end up linked into instrumented binaries, so they have to be
+# instrumented too.
+echo "==> Building the runtime staticlib for JIT symbol resolution"
+cargo "+${toolchain}" build -Zbuild-std --target "${target}" --package tyrus-runtime --features system-allocator
+
+if [[ $# -eq 0 ]]; then
+    RUST_TEST_THREADS=1 run_step "tyrus-bin" "${sanitizer_runtime_cargo[@]}" --package tyrus --bin tyrus
+
+    # `tyrus-codegen` runs LLVM JIT compilation inside the test process. ASan
+    # substantially enlarges those recursive compiler frames, and libtest's
+    # default 2 MiB worker stack can overflow even without recursive source
+    # input. Keep the entire package serial and provide explicit ASan headroom,
+    # matching the in-process JIT policy announced above.
+    RUST_MIN_STACK="${test_stack_size}" RUST_TEST_THREADS=1 run_step "tyrus-codegen" "${sanitizer_cargo[@]}" --package tyrus-codegen
+
+    integration_targets=()
+    for test_file in tests/*.rs; do
+        [[ -e ${test_file} ]] || continue
+        test_name="${test_file##*/}"
+        if [[ ${test_name} == test_runner.rs ]]; then
+            continue
+        fi
+        integration_targets+=(--test "${test_name%.rs}")
+    done
+    if [[ ${#integration_targets[@]} -gt 0 ]]; then
+        run_step "tyrus-integration" "${sanitizer_runtime_cargo[@]}" --package tyrus "${integration_targets[@]}"
+    fi
+
+    # Each test in this harness builds one or more scratch Tyrus projects.
+    # Running all 25 concurrently can exhaust disk space because every generated
+    # binary links the instrumented runtime.
+    if [[ -e tests/test_runner.rs ]]; then
+        RUST_MIN_STACK="${test_stack_size}" RUST_TEST_THREADS=1 run_step "test-runner" "${sanitizer_runtime_cargo[@]}" --package tyrus --test test_runner
+    fi
+
+    run_step "workspace" "${sanitizer_runtime_cargo[@]}" --workspace --exclude tyrus --exclude tyrus-codegen
+else
+    RUST_MIN_STACK="${test_stack_size}" RUST_TEST_THREADS=1 run_step "selected" "${sanitizer_runtime_cargo[@]}" "${test_scope[@]}" "$@"
+fi

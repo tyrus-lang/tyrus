@@ -1,0 +1,70 @@
+// Inside an `async` function, every owned temporary that never became a binding
+// leaked once per evaluation: a `??` result, a concatenation, a template
+// literal, an argument computed at the call site, an allocating array method.
+//
+// This was recorded as a `??` bug and it was not one. The arithmetic pointed
+// there because `(maybe ?? "").length` was the shape that first showed it, and
+// the recorded diagnosis blamed the coalesce's present/fallback phi. Removing
+// the `??` and leaving an ordinary `base + "!"` leaks the same way, so the phi
+// was never the cause; `??` was one member of a much wider category.
+//
+// The cause is one line: `record_owned_native_result_with` returned without
+// recording anything whenever `async_results` was non-empty. That rule exists
+// because a value *moved* into the heap frame must not also be freed at its
+// source, but it was applied to every statement of every async function rather
+// than to the statements that actually suspend. A temporary consumed by a
+// borrowing operation, `.length` reads, it does not take, was then owned by
+// nobody at all: the frame never took it, and the statement-end sweep that
+// releases exactly this in a synchronous function had been switched off.
+//
+// A statement with no `await` anywhere in it, its own expressions and every
+// nested block included, is emitted as straight-line code inside a single
+// state-machine block. The statement-end sweep therefore dominates whatever the
+// statement allocated, which is the whole reason the synchronous rules are
+// sound, so `async_temporaries_tracked` re-enables them for that statement and
+// leaves the blanket rule in place for a statement that does suspend.
+//
+// The other half of the fix is what proved the first half was incomplete: every
+// place that hands a value to the async frame had to start dropping the pending
+// registration, because until now there was never one to drop.
+// `transfer_owned_native_result` located the entry of a value being bound to a
+// name and returned without removing it, ASan caught that here on `numbers`,
+// freed by the frame's drop glue at scope exit and again by the sweep at the end
+// of the declaration that introduced it. The three `replace_async_*_local` paths
+// had the same gap for assignment to an already-declared frame local, and the
+// corpus is what found them: `async-function-body-ownership` printed an empty
+// string where `FILLED` belonged, and `async-switch-try-completions` reported a
+// use-after-free. The synchronous `mutable_string_ownership` branch had always
+// forgotten the entry at exactly this point, so the discipline was already in
+// the file; it simply had no async sibling.
+function measure(text: string): usize {
+    return text.length;
+}
+
+export async function main(): Promise<void> {
+    let coalesced: usize = 0;
+    let concatenated: usize = 0;
+    let interpolated: usize = 0;
+    let passed: usize = 0;
+    let extended: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const maybe: string? = "payload";
+        const base: string = "payload";
+        const numbers: i32[] = [1, 2, 3];
+        coalesced += (maybe ?? "").length;
+        concatenated += (base + "!").length;
+        interpolated += `${base}!`.length;
+        passed += measure(base + "!");
+        extended += numbers.concat([4]).length;
+    }
+    console.log(coalesced);
+    console.log("assert:", 1400);
+    console.log(concatenated);
+    console.log("assert:", 1600);
+    console.log(interpolated);
+    console.log("assert:", 1600);
+    console.log(passed);
+    console.log("assert:", 1600);
+    console.log(extended);
+    console.log("assert:", 800);
+}

@@ -1,0 +1,19 @@
+// Phase 2. An object whose string fields are part allocated and part static is
+// not claimed at all, so the allocated one leaks, 2 bytes per iteration.
+//
+// The release frees an object's string fields as a group, so claiming this
+// object would free the static field too. Closing this needs per-field
+// ownership rather than one decision for the whole object.
+interface User {
+    display: string;
+    kind: string;
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const user: User = { display: "ada".toUpperCase(), kind: "admin" };
+        total += user.display.length + user.kind.length;
+    }
+    console.log(total);
+};

@@ -1,0 +1,37 @@
+// Graph edges()/mapEdges()/mapNodes() lifecycle in a 200-iteration loop:
+// edges() zips three runtime fillers into an owned tuple array (string nodes
+// move out of the intermediate arrays, only buffers are freed), mapEdges
+// builds a fresh graph calling the callback per weight, and mapNodes re-adds
+// every node and edge through the callback. Covers a bound result, an unbound
+// temporary, and the closure environment, all released exactly once.
+import { Graph } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: i32 = 0;
+    let count: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const g = Graph<string, i32>();
+        g.addNode("a");
+        g.addNode("b");
+        g.addNode("c");
+        g.addEdge("a", "b", 1);
+        g.addEdge("b", "c", 2);
+        g.addEdge("a", "c", 3);
+        const edges = g.edges();
+        count += edges.length;
+        total += edges[0][2];
+        total += edges[2][2];
+        const doubled = g.mapEdges((w: i32): i32 => w * 2);
+        total += doubled.edge("a", "b") ?? 0;
+        total += doubled.edge("b", "c") ?? 0;
+        const upper = g.mapNodes((n: string): string => n.toUpperCase());
+        total += upper.edge("A", "C") ?? 0;
+        count += g.edges().length;
+        count += doubled.nodeCount();
+        count += upper.nodeCount();
+    }
+    console.log(total);
+    console.log("assert:", 2400);
+    console.log(count);
+    console.log("assert:", 2400);
+};

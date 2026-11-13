@@ -1,0 +1,10 @@
+[package]
+name = "tyrus-temporal-data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Generated IANA time zone data shared by Tyrus core and runtime."
+
+[lints]
+workspace = true

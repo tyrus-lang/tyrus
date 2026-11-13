@@ -1,0 +1,837 @@
+name: Native release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux x86_64
+            runner: ubuntu-24.04
+            archive: LLVM-23.1.1-Linux-X64.tar.xz
+            sha256: 832aeb58d105de1cabc7b982dd2c65de0610f7377df48ae8fc2dd8e97420a15c
+            triple: x86_64-unknown-linux-gnu
+            suffix: linux-x86_64
+          - label: macOS ARM64
+            runner: macos-15
+            archive: LLVM-23.1.1-macOS-ARM64.tar.xz
+            sha256: 64220f1c99132ef7e580447781b84f96fbba6862a43a8f6522b423052cd67502
+            triple: aarch64-apple-darwin
+            suffix: macos-aarch64
+          - label: Windows x86_64
+            runner: windows-2022
+            archive: clang+llvm-23.1.1-x86_64-pc-windows-msvc.tar.xz
+            sha256: c54ac8146b420fe72e11e6fdd56498d6818011ad23267196b6ab37b5ac9264c3
+            triple: x86_64-pc-windows-msvc
+            suffix: windows-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          targets: ${{ matrix.triple }}
+      - name: Verify the pinned Rust toolchain
+        shell: bash
+        run: |
+          rust_version="$(rustc -V | awk '{print $2}')"
+          rust_llvm_version="$(rustc -vV | sed -n 's/^LLVM version: //p')"
+          test "$rust_version" = '1.99.1'
+          test "$rust_llvm_version" = '23.1.1'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test LLVM archive and native link manifest helpers
+        shell: bash
+        run: python -m unittest discover -s scripts/ci -p 'test_*.py'
+      - name: Validate the Windows developer script syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($scriptPath in @('scripts/tyrus.ps1', 'scripts/wasm.ps1')) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $env:GITHUB_WORKSPACE $scriptPath),
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
+          }
+      - name: Detect Windows symbolic link permission
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP "tyrus-symlink-capability-$PID"
+          $target = Join-Path $probeDir 'target.txt'
+          $link = Join-Path $probeDir 'link.txt'
+          New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+          Set-Content -Path $target -Value 'probe' -NoNewline
+          try {
+            New-Item -ItemType SymbolicLink -Path $link -Target $target -ErrorAction Stop | Out-Null
+            "TYRUS_TEST_WINDOWS_SYMLINK=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host 'Windows file symbolic link capability is available.'
+          } catch {
+            $win32Error = $_.Exception.HResult -band 0xffff
+            if ($win32Error -notin @(5, 1314)) { throw }
+            "TYRUS_TEST_WINDOWS_SYMLINK=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host '::notice::SKIP: Windows file symbolic link runtime coverage requires Developer Mode or SeCreateSymbolicLinkPrivilege.'
+          } finally {
+            Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Match the LLVM release static MSVC runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          'RUSTFLAGS=-C target-feature=+crt-static' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Validate release tag
+        id: release
+        shell: bash
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Release tag $GITHUB_REF_NAME does not match workspace version $version" >&2
+            exit 1
+          fi
+          echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+      - name: Install LLVM on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          archive="$RUNNER_TEMP/${{ matrix.archive }}"
+          prefix_root="$RUNNER_TEMP/llvm"
+          mkdir -p "$prefix_root"
+          curl --fail --location --retry 3 "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.1/${{ matrix.archive }}" --output "$archive"
+          python - "$archive" "${{ matrix.sha256 }}" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+
+          archive = pathlib.Path(sys.argv[1])
+          with archive.open("rb") as source:
+              actual = hashlib.file_digest(source, "sha256").hexdigest()
+          if actual != sys.argv[2]:
+              raise SystemExit(f"LLVM archive SHA-256 mismatch: {actual}")
+          PY
+          python scripts/ci/extract_llvm.py "$archive" "$prefix_root"
+          llvm_config="$(find "$prefix_root" -type f -name llvm-config -print -quit)"
+          test -n "$llvm_config"
+          prefix="$(dirname "$(dirname "$llvm_config")")"
+          for tool in clang llvm-ar llvm-nm llvm-profdata; do
+            if [[ ! -x "$prefix/bin/$tool" ]]; then
+              echo "Required LLVM tool was not extracted: $prefix/bin/$tool" >&2
+              exit 1
+            fi
+          done
+          echo "LLVM_SYS_231_PREFIX=$prefix" >> "$GITHUB_ENV"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+          llvm_version="$("$prefix/bin/llvm-config" --version)"
+          test "$llvm_version" = '23.1.1'
+          if [[ "$RUNNER_OS" == 'macOS' ]]; then
+            lld="$prefix/bin/ld64.lld"
+            test -x "$lld"
+            sdk_root="$(xcrun --sdk macosx --show-sdk-path)"
+            test -d "$sdk_root/usr/lib"
+            for library in libc++.tbd libc++abi.tbd; do
+              test -f "$sdk_root/usr/lib/$library"
+            done
+            test -f "$prefix/lib/libc++.1.dylib"
+            if [[ ! -e "$prefix/lib/libunwind.1.dylib" && -f "$prefix/lib/libunwind.1.0.dylib" ]]; then
+              ln -s libunwind.1.0.dylib "$prefix/lib/libunwind.1.dylib"
+            fi
+            test -f "$prefix/lib/libunwind.1.dylib"
+            echo "SDKROOT=$sdk_root" >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=$prefix/bin/clang" >> "$GITHUB_ENV"
+            echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld -C link-arg=--ld-path=$lld -C link-arg=-isysroot -C link-arg=$sdk_root -C link-arg=-Wl,-rpath,$prefix/lib -C link-arg=$sdk_root/usr/lib/libc++.tbd -C link-arg=$sdk_root/usr/lib/libc++abi.tbd" >> "$GITHUB_ENV"
+          fi
+      - name: Verify Mach-O runtime archive linking before compiling Rust
+        if: runner.os == 'macOS'
+        shell: bash
+        run: python -m unittest discover -s scripts/ci -p 'test_macos_runtime_archive.py'
+      - name: Install LLVM on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP '${{ matrix.archive }}'
+          $prefixRoot = Join-Path $env:RUNNER_TEMP 'llvm'
+          New-Item -ItemType Directory -Force -Path $prefixRoot | Out-Null
+          Invoke-WebRequest -Uri 'https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.1/${{ matrix.archive }}' -OutFile $archive
+          $actualHash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actualHash -ne '${{ matrix.sha256 }}') { throw "LLVM archive SHA-256 mismatch: $actualHash" }
+          python scripts/ci/extract_llvm.py $archive $prefixRoot
+          $llvmConfig = Get-ChildItem $prefixRoot -Filter llvm-config.exe -Recurse -File | Select-Object -First 1
+          if ($null -eq $llvmConfig) { throw 'LLVM 23.1.1 llvm-config.exe was not found after extraction.' }
+          $prefix = Split-Path (Split-Path $llvmConfig.FullName -Parent) -Parent
+          foreach ($tool in @('clang.exe', 'llvm-ar.exe', 'llvm-nm.exe', 'llvm-profdata.exe')) {
+            if (-not (Test-Path (Join-Path $prefix "bin/$tool"))) { throw "Required LLVM tool was not extracted: $tool" }
+          }
+          "LLVM_SYS_231_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          (Join-Path $prefix 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $llvmVersion = (& (Join-Path $prefix 'bin/llvm-config.exe') --version).Trim()
+          if ($LASTEXITCODE -ne 0 -or $llvmVersion -ne '23.1.1') { throw "Expected LLVM 23.1.1, found $llvmVersion." }
+      - name: Verify MSVC runtime exports from the definition file
+        if: runner.os == 'Windows'
+        shell: bash
+        run: python -m unittest discover -s scripts/ci -p 'test_msvc_runtime_exports.py'
+      - name: Validate Windows LLVM link dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CARGO_CFG_TARGET_ENV: msvc
+          CARGO_CFG_TARGET_FEATURE: crt-static
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { throw 'VCPKG_INSTALLATION_ROOT is required to install LLVM release dependencies.' }
+          $vcpkg = Join-Path $vcpkgRoot 'vcpkg.exe'
+          $installed = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & $vcpkg install 'zlib:x64-windows-static' 'zstd:x64-windows-static' 'libxml2[core]:x64-windows-static'
+            if ($LASTEXITCODE -eq 0) {
+              $installed = $true
+              break
+            }
+            if ($attempt -lt 3) {
+              Write-Warning "vcpkg dependency installation failed on attempt $attempt; retrying."
+              Start-Sleep -Seconds (10 * $attempt)
+            }
+          }
+          if (-not $installed) { throw 'Could not install the LLVM release dependencies with vcpkg after three attempts.' }
+          $dependencyLib = Join-Path $vcpkgRoot 'installed/x64-windows-static/lib'
+          $llvmLib = Join-Path $env:LLVM_SYS_231_PREFIX 'lib'
+          python scripts/ci/copy_windows_llvm_dependencies.py $dependencyLib $llvmLib
+          if ($LASTEXITCODE -ne 0) { throw 'Could not prepare the LLVM dependency library names.' }
+          $probe = Join-Path $env:RUNNER_TEMP 'tyrus-llvm-link-check.exe'
+          rustc --edition=2024 crates/tyrus-codegen/build.rs -o $probe
+          if ($LASTEXITCODE -ne 0) { throw 'Could not compile the LLVM link dependency check.' }
+          $probeLog = Join-Path $env:RUNNER_TEMP 'tyrus-llvm-link-check.log'
+          & $probe *> $probeLog
+          $probeExitCode = $LASTEXITCODE
+          Get-Content $probeLog
+          if ($probeExitCode -ne 0) { throw "LLVM link dependency check exited with $probeExitCode; full output is shown above from $probeLog." }
+      - name: Install Linux native development files
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential libc6-dev
+          libc_path="$("$LLVM_SYS_231_PREFIX/bin/clang" --print-file-name=libc.so)"
+          printf 'Clang libc path: %s\n' "$libc_path"
+          test "$libc_path" != 'libc.so'
+          test -f "$libc_path"
+      - name: Build runtime and CLI on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cargo build --release -p tyrus-runtime
+          native_output="$RUNNER_TEMP/native-static-libs.txt"
+          cargo rustc --color never --release -p tyrus-runtime --lib -- --print=native-static-libs > "$native_output" 2>&1
+          cat "$native_output"
+          python scripts/ci/extract_native_static_libs.py "$native_output" target/release/tyrus-native-libs.json --target "${{ matrix.triple }}"
+          mkdir -p target/debug
+          cp target/release/tyrus-native-libs.json target/debug/tyrus-native-libs.json
+          cargo build --release --bin tyrus
+          ./target/release/tyrus --version
+      - name: Smoke-test release JIT runtime symbols on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cargo test --release -p tyrus --bin tyrus jit_native_runtime_symbols
+          cargo test --release -p tyrus --bin tyrus jit_async_main_runs_native_runtime_calls
+      - name: Smoke-test release JIT runtime symbols on Windows
+        if: runner.os == 'Windows' && github.run_attempt == 1
+        shell: pwsh
+        env:
+          TYRUS_JIT_TRACE: '1'
+        run: |
+          $llvm = Join-Path $env:LLVM_SYS_231_PREFIX 'bin/llvm-config.exe'
+          Write-Host "LLVM prefix: $env:LLVM_SYS_231_PREFIX"
+          & $llvm --version
+          & $llvm --libdir
+          & $llvm --libnames
+          cargo tree -i llvm-sys
+
+          cargo build --release -p tyrus-runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the release runtime for the JIT smoke tests.' }
+          cargo test --release -p tyrus --bin tyrus jit_native_runtime_symbols -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'The synchronous release JIT runtime symbol smoke test failed.' }
+          cargo test --release -p tyrus --bin tyrus jit_async_main_runs_native_runtime_calls -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'The asynchronous release JIT runtime symbol smoke test failed.' }
+      - name: Skip Windows release JIT smoke on rerun
+        if: runner.os == 'Windows' && github.run_attempt > 1
+        shell: pwsh
+        run: Write-Host 'Skipping the release JIT smoke tests because this is a workflow rerun; continuing with the Windows developer script.'
+      - name: Test Windows drive and UNC path normalization
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo test -p tyrus-runtime path::tests::windows_
+          if ($LASTEXITCODE -ne 0) { throw 'Windows drive or UNC path normalization tests failed.' }
+      - name: Free release artifacts before the Windows workspace suite
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo clean --release
+          if ($LASTEXITCODE -ne 0) { throw 'Could not free the release artifacts before workspace tests.' }
+      - name: Build, test, and install with the Windows developer script
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\tyrus.ps1
+      - name: Upload Windows crash dumps
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tyrus-windows-crash-dumps
+          path: ${{ runner.temp }}/tyrus-crash-dumps/**/*.dmp
+          if-no-files-found: warn
+      - name: Upload Windows workspace test log
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tyrus-windows-workspace-test-log
+          path: ${{ runner.temp }}/tyrus-cargo-test-workspace.log
+          if-no-files-found: warn
+      - name: Validate the Windows WASM developer script
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          rustup target add wasm32-unknown-unknown
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the WebAssembly Rust target.' }
+          .\scripts\wasm.ps1 -Check
+      - name: Build the macOS debug runtime for workspace tests
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cargo build -p tyrus-runtime
+          test -f target/debug/libtyrus_runtime.a
+      - name: Test workspace
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == 'macOS' ]]; then
+            export TYRUS_RUNTIME_LIB="$GITHUB_WORKSPACE/target/debug/libtyrus_runtime.a"
+            export RUST_TEST_THREADS=4
+            export RUSTDOCFLAGS="$RUSTFLAGS"
+            log_file="$RUNNER_TEMP/cargo-test-workspace-macos.log"
+            if cargo test --workspace --no-fail-fast --verbose > "$log_file" 2>&1; then
+              tail -n 80 "$log_file"
+            else
+              cat "$log_file"
+              exit 1
+            fi
+          else
+            cargo test --workspace --no-fail-fast
+          fi
+      - name: Verify native CLI and relative filesystem paths on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          project="$RUNNER_TEMP/Tyrus Release Smoke 東京"
+          mkdir -p "$project/src" "$project/nested/src"
+          cat > "$project/tyrus.json" <<'EOF'
+          {"project":{"name":"tyrus-release-smoke","version":"0.1.0","authors":[],"description":"Release smoke test"},"dependencies":{}}
+          EOF
+          printf 'native release smoke' > "$project/message.txt"
+          printf 'nested cwd smoke' > "$project/nested/message.txt"
+          printf 'root path' > "$project/src/probe.txt"
+          printf 'nested path' > "$project/nested/src/probe.txt"
+          printf 'nested extra path' > "$project/nested/src/extra.txt"
+          printf 'native release smoke' > "$RUNNER_TEMP/message.txt"
+          cat > "$project/src/main.tyr" <<'EOF'
+          import { DiskUsage, FsError, diskUsage, glob, readFileSync, stat } from "tyrus:fs";
+
+          function reportPath(path: string): void {
+              match (readFileSync(path)) {
+                  Ok(text) => { console.log(text); }
+                  Err(error) => { console.error(error.code); }
+              }
+          }
+
+          function reportGlob(pattern: string): void {
+              match (glob(pattern)) {
+                  Ok(files) => { console.log(files.length); }
+                  Err(error) => { console.error(error.code); }
+              }
+          }
+
+          function main(): void {
+              reportPath("../message.txt");
+              reportPath("./message.txt");
+              reportPath("src\\probe.txt");
+              reportGlob("src/*.txt");
+              reportGlob("./src/*.txt");
+              printError("native release stderr");
+              match (diskUsage(".")) {
+                  Ok(usage) => { if (usage.total > 0) { console.log("disk usage ok"); } }
+                  Err(error) => { console.error(error.code); }
+              }
+              match (stat("message.txt")) {
+                  Ok(_) => {}
+                  Err(error) => { console.error(error.code); process.exit(91); }
+              }
+          }
+          EOF
+          cd "$project"
+          "$GITHUB_WORKSPACE/target/release/tyrus" check
+          run_stderr="$RUNNER_TEMP/tyrus-run-stderr.txt"
+          run_output="$("$GITHUB_WORKSPACE/target/release/tyrus" run 2>"$run_stderr")"
+          run_expected="$(printf 'native release smoke\nnative release smoke\nroot path\n1\n1\ndisk usage ok')"
+          test "$run_output" = "$run_expected"
+          test "$(tail -n 1 "$run_stderr")" = 'native release stderr'
+          "$GITHUB_WORKSPACE/target/release/tyrus" build
+          native_stderr="$RUNNER_TEMP/tyrus-native-stderr.txt"
+          output="$(cd "$project/nested" && "$project/target/debug/tyrus-release-smoke" 2>"$native_stderr")"
+          expected="$(printf 'native release smoke\nnested cwd smoke\nnested path\n2\n2\ndisk usage ok')"
+          test "$output" = "$expected"
+          test "$(cat "$native_stderr")" = 'native release stderr'
+          exit_project="$RUNNER_TEMP/Tyrus Exit Status Smoke"
+          mkdir -p "$exit_project/src"
+          cat > "$exit_project/tyrus.json" <<'EOF'
+          {"project":{"name":"tyrus-exit-smoke","version":"0.1.0","authors":[],"description":"Exit status smoke test"},"dependencies":{}}
+          EOF
+          printf 'function main(): void { process.exit(23); }\n' > "$exit_project/src/main.tyr"
+          cd "$exit_project"
+          set +e
+          "$GITHUB_WORKSPACE/target/release/tyrus" run >run.stdout 2>run.stderr
+          run_status=$?
+          set -e
+          test "$run_status" -eq 23
+          test ! -s run.stdout
+          "$GITHUB_WORKSPACE/target/release/tyrus" build
+          set +e
+          "$exit_project/target/debug/tyrus-exit-smoke" >binary.stdout 2>binary.stderr
+          binary_status=$?
+          set -e
+          test "$binary_status" -eq 23
+          test ! -s binary.stdout
+      - name: Verify native CLI and relative filesystem paths on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $project = Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京'
+          New-Item -ItemType Directory -Force -Path (Join-Path $project 'src'), (Join-Path $project 'nested/src') | Out-Null
+          @'
+          {"project":{"name":"tyrus-release-smoke","version":"0.1.0","authors":[],"description":"Release smoke test"},"dependencies":{}}
+          '@ | Set-Content -Encoding utf8 (Join-Path $project 'tyrus.json')
+          [IO.File]::WriteAllText((Join-Path $project 'message.txt'), 'native release smoke')
+          [IO.File]::WriteAllText((Join-Path $project 'nested/message.txt'), 'nested cwd smoke')
+          [IO.File]::WriteAllText((Join-Path $project 'src/probe.txt'), 'root path')
+          [IO.File]::WriteAllText((Join-Path $project 'nested/src/probe.txt'), 'nested path')
+          [IO.File]::WriteAllText((Join-Path $project 'nested/src/extra.txt'), 'nested extra path')
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'message.txt'), 'native release smoke')
+          @'
+          import { DiskUsage, FsError, diskUsage, glob, readFileSync, stat } from "tyrus:fs";
+
+          function reportPath(path: string): void {
+              match (readFileSync(path)) {
+                  Ok(text) => { console.log(text); }
+                  Err(error) => { console.error(error.code); }
+              }
+          }
+
+          function reportGlob(pattern: string): void {
+              match (glob(pattern)) {
+                  Ok(files) => { console.log(files.length); }
+                  Err(error) => { console.error(error.code); }
+              }
+          }
+
+          function main(): void {
+              reportPath("../message.txt");
+              reportPath("./message.txt");
+              reportPath("src\\probe.txt");
+              reportGlob("src/*.txt");
+              reportGlob("./src/*.txt");
+              printError("native release stderr");
+              match (diskUsage(".")) {
+                  Ok(usage) => { if (usage.total > 0) { console.log("disk usage ok"); } }
+                  Err(error) => { console.error(error.code); }
+              }
+              match (stat("message.txt")) {
+                  Ok(_) => {}
+                  Err(error) => { console.error(error.code); process.exit(91); }
+              }
+          }
+          '@ | Set-Content -Encoding utf8 (Join-Path $project 'src/main.tyr')
+          Push-Location $project
+          try {
+            & "$env:GITHUB_WORKSPACE/target/release/tyrus.exe" check
+            if ($LASTEXITCODE -ne 0) { throw 'tyrus check failed.' }
+            $runStderr = Join-Path $env:RUNNER_TEMP 'tyrus-run-stderr.txt'
+            $runOutput = & "$env:GITHUB_WORKSPACE/target/release/tyrus.exe" run 2> $runStderr
+            if ($LASTEXITCODE -ne 0) { throw 'tyrus run failed.' }
+            if (($runOutput -join "`n").Trim() -ne "native release smoke`nnative release smoke`nroot path`n1`n1`ndisk usage ok") { throw "Unexpected tyrus run output: $runOutput" }
+            if ((Get-Content $runStderr | Select-Object -Last 1).Trim() -ne 'native release stderr') { throw 'tyrus run did not preserve stderr separately.' }
+            & "$env:GITHUB_WORKSPACE/target/release/tyrus.exe" build
+            if ($LASTEXITCODE -ne 0) { throw 'tyrus debug build failed.' }
+          } finally {
+            Pop-Location
+          }
+          Push-Location (Join-Path $project 'nested')
+          try {
+            $nativeStderr = Join-Path $env:RUNNER_TEMP 'tyrus-native-stderr.txt'
+            $output = & (Join-Path $project 'target/debug/tyrus-release-smoke.exe') 2> $nativeStderr
+            if ($LASTEXITCODE -ne 0) { throw 'Generated native program failed.' }
+            if (($output -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected smoke output: $output" }
+            if ((Get-Content -Raw $nativeStderr).Trim() -ne 'native release stderr') { throw 'Generated program did not preserve stderr separately.' }
+          } finally {
+            Pop-Location
+          }
+          Push-Location $project
+          try {
+            & "$env:GITHUB_WORKSPACE/target/release/tyrus.exe" build --release
+            if ($LASTEXITCODE -ne 0) { throw 'tyrus release build failed.' }
+          } finally {
+            Pop-Location
+          }
+          Push-Location (Join-Path $project 'nested')
+          try {
+            $releaseOutput = & (Join-Path $project 'target/release/tyrus-release-smoke.exe')
+            if ($LASTEXITCODE -ne 0) { throw 'Generated release program failed.' }
+            if (($releaseOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected release smoke output: $releaseOutput" }
+          } finally {
+            Pop-Location
+          }
+          $exitProject = Join-Path $env:RUNNER_TEMP 'Tyrus Exit Status Smoke'
+          New-Item -ItemType Directory -Force -Path (Join-Path $exitProject 'src') | Out-Null
+          [IO.File]::WriteAllText((Join-Path $exitProject 'tyrus.json'), '{"project":{"name":"tyrus-exit-smoke","version":"0.1.0","authors":[],"description":"Exit status smoke test"},"dependencies":{}}')
+          [IO.File]::WriteAllText((Join-Path $exitProject 'src/main.tyr'), 'function main(): void { process.exit(23); }')
+          $cliStdout = Join-Path $exitProject 'cli.stdout'
+          $cliStderr = Join-Path $exitProject 'cli.stderr'
+          Push-Location $exitProject
+          try {
+            & "$env:GITHUB_WORKSPACE/target/release/tyrus.exe" run > $cliStdout 2> $cliStderr
+            if ($LASTEXITCODE -ne 23) { throw "tyrus run returned exit code $LASTEXITCODE instead of 23." }
+            if ((Get-Item $cliStdout).Length -ne 0) { throw 'tyrus run wrote unexpected data to stdout before process.exit(23).' }
+            & "$env:GITHUB_WORKSPACE/target/release/tyrus.exe" build
+            if ($LASTEXITCODE -ne 0) { throw 'tyrus exit status smoke build failed.' }
+          } finally {
+            Pop-Location
+          }
+          $binaryStdout = Join-Path $exitProject 'binary.stdout'
+          $binaryStderr = Join-Path $exitProject 'binary.stderr'
+          & (Join-Path $exitProject 'target/debug/tyrus-exit-smoke.exe') > $binaryStdout 2> $binaryStderr
+          if ($LASTEXITCODE -ne 23) { throw "Generated binary returned exit code $LASTEXITCODE instead of 23." }
+          if ((Get-Item $binaryStdout).Length -ne 0) { throw 'Generated binary wrote unexpected data to stdout before process.exit(23).' }
+          if ((Get-Item $binaryStderr).Length -ne 0) { throw 'Generated binary wrote unexpected data to stderr before process.exit(23).' }
+          Write-Host 'Exit status smoke passed: tyrus run and the generated binary returned 23.'
+          $global:LASTEXITCODE = 0
+      - name: Package Unix release
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          version="$GITHUB_REF_NAME"
+          root="$RUNNER_TEMP/package/tyrus-$version-${{ matrix.suffix }}"
+          mkdir -p "$root/bin" "$root/lib/clang/23"
+          cp target/release/tyrus "$root/bin/tyrus"
+          cp target/release/libtyrus_runtime.a "$root/bin/libtyrus_runtime.a"
+          cp target/release/tyrus-native-libs.json "$root/bin/tyrus-native-libs.json"
+          cp LICENSE "$root/LICENSE"
+          cp "$LLVM_SYS_231_PREFIX/include/llvm/Support/LICENSE.TXT" "$root/LLVM-LICENSE.TXT"
+          cp -L "$LLVM_SYS_231_PREFIX/bin/clang" "$root/bin/clang"
+          cp -L "$LLVM_SYS_231_PREFIX/bin/llvm-profdata" "$root/bin/llvm-profdata"
+          cp -a "$LLVM_SYS_231_PREFIX/lib/clang/23/." "$root/lib/clang/23/"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            mkdir -p "$root/lib"
+            find "$LLVM_SYS_231_PREFIX/lib" -maxdepth 1 -name '*.dylib' -exec cp -L '{}' "$root/lib/" \;
+          else
+            mkdir -p "$root/lib"
+            find "$LLVM_SYS_231_PREFIX/lib" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -exec cp -L '{}' "$root/lib/" \;
+            sudo apt-get update
+            sudo apt-get install --yes patchelf
+            patchelf --set-rpath '$ORIGIN/../lib' "$root/bin/tyrus"
+            patchelf --set-rpath '$ORIGIN/../lib' "$root/bin/clang"
+            patchelf --set-rpath '$ORIGIN/../lib' "$root/bin/llvm-profdata"
+          fi
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            for executable in "$root/bin/tyrus" "$root/bin/clang" "$root/bin/llvm-profdata"; do
+              if ! otool -l "$executable" | grep -Fq '@executable_path/../lib'; then
+                install_name_tool -add_rpath '@executable_path/../lib' "$executable"
+              fi
+            done
+            install_name_tool -delete_rpath "$LLVM_SYS_231_PREFIX/lib" "$root/bin/tyrus"
+          fi
+          cat > "$root/README.txt" <<'EOF'
+          Tyrus native release package
+
+          Extract this archive and add its bin directory to PATH. The bundled compiler resolves LLVM libraries from the package and finds its matching Clang, llvm-profdata, and runtime library beside itself.
+
+          Verify the archive checksum with `sha256sum -c <archive>.sha256` on Linux or `shasum -a 256 -c <archive>.sha256` on macOS. Run `tyrus --version` after adding bin to PATH.
+
+          Native program builds require the platform C toolchain and system development SDK: glibc development files and a linker on Linux, Xcode Command Line Tools on macOS, or Visual Studio Build Tools with the C++ workload and Windows SDK on Windows.
+
+          This package targets native Tyrus programs. WebAssembly runtime files are not included.
+          EOF
+          archive="$RUNNER_TEMP/tyrus-$version-${{ matrix.suffix }}.tar.gz"
+          tar -czf "$archive" -C "$RUNNER_TEMP/package" "tyrus-$version-${{ matrix.suffix }}"
+          if command -v sha256sum >/dev/null; then
+            (cd "$RUNNER_TEMP" && sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256")
+            (cd "$RUNNER_TEMP" && sha256sum --check "$(basename "$archive").sha256")
+          else
+            (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")
+            (cd "$RUNNER_TEMP" && shasum -a 256 -c "$(basename "$archive").sha256")
+          fi
+          mv "$RUNNER_TEMP/llvm" "$RUNNER_TEMP/llvm-disabled"
+          rm -rf "$RUNNER_TEMP/package"
+          package_project="$RUNNER_TEMP/Tyrus Packaged Smoke 東京"
+          mkdir -p "$package_project/src" "$package_project/nested/src"
+          cp "$RUNNER_TEMP/Tyrus Release Smoke 東京/tyrus.json" "$package_project/tyrus.json"
+          cp "$RUNNER_TEMP/Tyrus Release Smoke 東京/message.txt" "$package_project/message.txt"
+          cp "$RUNNER_TEMP/Tyrus Release Smoke 東京/nested/message.txt" "$package_project/nested/message.txt"
+          cp "$RUNNER_TEMP/Tyrus Release Smoke 東京/src/probe.txt" "$package_project/src/probe.txt"
+          cp "$RUNNER_TEMP/Tyrus Release Smoke 東京/nested/src/probe.txt" "$package_project/nested/src/probe.txt"
+          cp "$RUNNER_TEMP/Tyrus Release Smoke 東京/nested/src/extra.txt" "$package_project/nested/src/extra.txt"
+          cp "$RUNNER_TEMP/Tyrus Release Smoke 東京/src/main.tyr" "$package_project/src/main.tyr"
+          printf 'native release smoke' > "$RUNNER_TEMP/message.txt"
+          cd "$package_project"
+          install_dir="$RUNNER_TEMP/installed-package"
+          mkdir -p "$install_dir"
+          tar -xzf "$archive" -C "$install_dir"
+          installed="$install_dir/tyrus-$version-${{ matrix.suffix }}"
+          export PATH="$installed/bin:$PATH"
+          unset LD_LIBRARY_PATH DYLD_LIBRARY_PATH
+          unset LLVM_SYS_231_PREFIX TYRUS_CLANG TYRUS_LLC TYRUS_WASM_LD TYRUS_LLVM_PROFDATA
+          unset TYRUS_RUNTIME_LIB TYRUS_NATIVE_LIBS_FILE
+          "$installed/bin/tyrus" --version
+          "$installed/bin/tyrus" check
+          "$installed/bin/tyrus" run
+          "$installed/bin/tyrus" build --release
+          package_stderr="$RUNNER_TEMP/tyrus-package-stderr.txt"
+          output="$(cd "$package_project/nested" && "$package_project/target/release/tyrus-release-smoke" 2>"$package_stderr")"
+          expected="$(printf 'native release smoke\nnested cwd smoke\nnested path\n2\n2\ndisk usage ok')"
+          test "$output" = "$expected"
+          test "$(cat "$package_stderr")" = 'native release stderr'
+          "$installed/bin/tyrus" build --release --pgo-generate
+          output="$(cd "$package_project/nested" && "$package_project/target/release/tyrus-release-smoke" 2>"$package_stderr")"
+          test "$output" = "$expected"
+          test "$(cat "$package_stderr")" = 'native release stderr'
+          "$installed/bin/tyrus" pgo-merge
+          "$installed/bin/tyrus" build --release --pgo-use
+          output="$(cd "$package_project/nested" && "$package_project/target/release/tyrus-release-smoke" 2>"$package_stderr")"
+          test "$output" = "$expected"
+          test "$(cat "$package_stderr")" = 'native release stderr'
+      - name: Package Windows release
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = '${{ steps.release.outputs.version }}'
+          $prefix = $env:LLVM_SYS_231_PREFIX
+          $name = "tyrus-$version-${{ matrix.suffix }}"
+          $root = Join-Path $env:RUNNER_TEMP "package/$name"
+          $bin = Join-Path $root 'bin'
+          $resource = Join-Path $root 'lib/clang/23'
+          New-Item -ItemType Directory -Force -Path $bin, $resource | Out-Null
+          Copy-Item "$env:GITHUB_WORKSPACE/target/release/tyrus.exe" $bin
+          Copy-Item "$env:GITHUB_WORKSPACE/target/release/tyrus_runtime.lib" $bin
+          Copy-Item "$env:GITHUB_WORKSPACE/target/release/tyrus-native-libs.json" $bin
+          Copy-Item "$env:GITHUB_WORKSPACE/target/release/windows.*.lib" $bin
+          Copy-Item "$env:GITHUB_WORKSPACE/LICENSE" $root
+          Copy-Item (Join-Path $prefix 'include/llvm/Support/LICENSE.TXT') (Join-Path $root 'LLVM-LICENSE.TXT')
+          Copy-Item (Join-Path $prefix 'bin/clang.exe') (Join-Path $bin 'clang.exe')
+          Copy-Item (Join-Path $prefix 'bin/llvm-profdata.exe') (Join-Path $bin 'llvm-profdata.exe')
+          Copy-Item (Join-Path $prefix 'bin/*.dll') $bin -ErrorAction SilentlyContinue
+          Copy-Item (Join-Path $prefix 'lib/clang/23/*') $resource -Recurse -Force
+          @'
+          Tyrus native release package
+
+          Expand this archive and add its bin directory to PATH. The bundled compiler resolves LLVM DLLs from the package and finds its matching Clang, llvm-profdata, and runtime library beside itself.
+
+          Verify the archive checksum by comparing `Get-FileHash -Algorithm SHA256 <archive>.zip` with the hash in `<archive>.zip.sha256`. Run `tyrus --version` after adding bin to PATH.
+
+          Native program builds require Visual Studio Build Tools with the C++ workload and Windows SDK.
+
+          This package targets native Tyrus programs. WebAssembly runtime files are not included.
+          '@ | Set-Content -Encoding utf8 (Join-Path $root 'README.txt')
+          $archive = Join-Path $env:RUNNER_TEMP "$name.zip"
+          Compress-Archive -Path $root -DestinationPath $archive -CompressionLevel Optimal
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Encoding ascii "$archive.sha256"
+          $expectedHash = (Get-Content -Raw "$archive.sha256").Split(' ')[0]
+          if ($hash -ne $expectedHash) { throw 'The Windows release archive checksum did not match.' }
+          Remove-Item (Join-Path $env:RUNNER_TEMP 'llvm') -Recurse -Force
+          Remove-Item $root -Recurse -Force
+          $installDir = Join-Path $env:RUNNER_TEMP 'installed-package'
+          Expand-Archive -Path $archive -DestinationPath $installDir
+          $installed = Join-Path $installDir $name
+          $env:PATH = "$(Join-Path $installed 'bin');$env:PATH"
+          Remove-Item Env:LLVM_SYS_231_PREFIX -ErrorAction SilentlyContinue
+          Remove-Item Env:TYRUS_CLANG -ErrorAction SilentlyContinue
+          Remove-Item Env:TYRUS_LLC -ErrorAction SilentlyContinue
+          Remove-Item Env:TYRUS_WASM_LD -ErrorAction SilentlyContinue
+          Remove-Item Env:TYRUS_LLVM_PROFDATA -ErrorAction SilentlyContinue
+          Remove-Item Env:TYRUS_RUNTIME_LIB -ErrorAction SilentlyContinue
+          Remove-Item Env:TYRUS_NATIVE_LIBS_FILE -ErrorAction SilentlyContinue
+          & (Join-Path $installed 'bin/tyrus.exe') --version
+          $packageProject = Join-Path $env:RUNNER_TEMP 'Tyrus Packaged Smoke 東京'
+          New-Item -ItemType Directory -Force -Path (Join-Path $packageProject 'src'), (Join-Path $packageProject 'nested/src') | Out-Null
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京/tyrus.json') (Join-Path $packageProject 'tyrus.json')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京/message.txt') (Join-Path $packageProject 'message.txt')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京/nested/message.txt') (Join-Path $packageProject 'nested/message.txt')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京/src/probe.txt') (Join-Path $packageProject 'src/probe.txt')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京/nested/src/probe.txt') (Join-Path $packageProject 'nested/src/probe.txt')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京/nested/src/extra.txt') (Join-Path $packageProject 'nested/src/extra.txt')
+          Copy-Item (Join-Path $env:RUNNER_TEMP 'Tyrus Release Smoke 東京/src/main.tyr') (Join-Path $packageProject 'src/main.tyr')
+          [IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'message.txt'), 'native release smoke')
+          Push-Location $packageProject
+          try {
+            & (Join-Path $installed 'bin/tyrus.exe') check
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged tyrus check failed.' }
+            $packageRunStderr = Join-Path $env:RUNNER_TEMP 'tyrus-package-run-stderr.txt'
+            $runOutput = & (Join-Path $installed 'bin/tyrus.exe') run 2> $packageRunStderr
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged tyrus run failed.' }
+            if (($runOutput -join "`n").Trim() -ne "native release smoke`nnative release smoke`nroot path`n1`n1`ndisk usage ok") { throw "Unexpected packaged tyrus run output: $runOutput" }
+            if ((Get-Content $packageRunStderr | Select-Object -Last 1).Trim() -ne 'native release stderr') { throw 'Packaged tyrus run did not preserve stderr separately.' }
+            & (Join-Path $installed 'bin/tyrus.exe') build
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged tyrus build failed.' }
+          } finally {
+            Pop-Location
+          }
+          Push-Location (Join-Path $packageProject 'nested')
+          try {
+            $packageStderr = Join-Path $env:RUNNER_TEMP 'tyrus-package-stderr.txt'
+            $output = & (Join-Path $packageProject 'target/debug/tyrus-release-smoke.exe') 2> $packageStderr
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged native program failed.' }
+            if ((Get-Content -Raw $packageStderr).Trim() -ne 'native release stderr') { throw 'Packaged program did not preserve stderr separately.' }
+            if (($output -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged smoke output: $output" }
+          } finally {
+            Pop-Location
+          }
+          $packageExitProject = Join-Path $env:RUNNER_TEMP 'Tyrus Packaged Exit Status Smoke'
+          New-Item -ItemType Directory -Force -Path (Join-Path $packageExitProject 'src') | Out-Null
+          [IO.File]::WriteAllText((Join-Path $packageExitProject 'tyrus.json'), '{"project":{"name":"tyrus-packaged-exit-smoke","version":"0.1.0","authors":[],"description":"Packaged exit status smoke test"},"dependencies":{}}')
+          [IO.File]::WriteAllText((Join-Path $packageExitProject 'src/main.tyr'), 'function main(): void { process.exit(23); }')
+          $packageCliStdout = Join-Path $packageExitProject 'cli.stdout'
+          $packageCliStderr = Join-Path $packageExitProject 'cli.stderr'
+          Push-Location $packageExitProject
+          try {
+            & (Join-Path $installed 'bin/tyrus.exe') run > $packageCliStdout 2> $packageCliStderr
+            if ($LASTEXITCODE -ne 23) { throw "Packaged tyrus run returned exit code $LASTEXITCODE instead of 23." }
+            if ((Get-Item $packageCliStdout).Length -ne 0) { throw 'Packaged tyrus run wrote unexpected data to stdout before process.exit(23).' }
+            & (Join-Path $installed 'bin/tyrus.exe') build
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged exit status smoke build failed.' }
+          } finally {
+            Pop-Location
+          }
+          $packageBinaryStdout = Join-Path $packageExitProject 'binary.stdout'
+          $packageBinaryStderr = Join-Path $packageExitProject 'binary.stderr'
+          & (Join-Path $packageExitProject 'target/debug/tyrus-packaged-exit-smoke.exe') > $packageBinaryStdout 2> $packageBinaryStderr
+          if ($LASTEXITCODE -ne 23) { throw "Packaged generated binary returned exit code $LASTEXITCODE instead of 23." }
+          if ((Get-Item $packageBinaryStdout).Length -ne 0) { throw 'Packaged generated binary wrote unexpected data to stdout before process.exit(23).' }
+          if ((Get-Item $packageBinaryStderr).Length -ne 0) { throw 'Packaged generated binary wrote unexpected data to stderr before process.exit(23).' }
+          Push-Location $packageProject
+          try {
+            & (Join-Path $installed 'bin/tyrus.exe') build --release
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged tyrus release build failed.' }
+          } finally {
+            Pop-Location
+          }
+          Push-Location (Join-Path $packageProject 'nested')
+          try {
+            $releaseOutput = & (Join-Path $packageProject 'target/release/tyrus-release-smoke.exe') 2> $packageStderr
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged native release program failed.' }
+            if ((Get-Content -Raw $packageStderr).Trim() -ne 'native release stderr') { throw 'Packaged release program did not preserve stderr separately.' }
+            if (($releaseOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged release smoke output: $releaseOutput" }
+          } finally {
+            Pop-Location
+          }
+          Push-Location $packageProject
+          try {
+            & (Join-Path $installed 'bin/tyrus.exe') build --release --pgo-generate
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged PGO generation build failed.' }
+          } finally {
+            Pop-Location
+          }
+          Push-Location (Join-Path $packageProject 'nested')
+          try {
+            $previousProfileFile = $env:LLVM_PROFILE_FILE
+            $profileDirectory = Join-Path $packageProject 'target/pgo'
+            New-Item -ItemType Directory -Force -Path $profileDirectory | Out-Null
+            $profileOutputDirectory = Join-Path $env:RUNNER_TEMP 'tyrus-pgo-profiles'
+            Remove-Item $profileOutputDirectory -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $profileOutputDirectory | Out-Null
+            $env:LLVM_PROFILE_FILE = Join-Path $profileOutputDirectory 'tyrus-%p.profraw'
+            Write-Host "LLVM_PROFILE_FILE: $env:LLVM_PROFILE_FILE"
+            $pgoOutput = & (Join-Path $packageProject 'target/release/tyrus-release-smoke.exe') 2> $packageStderr
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged PGO generation program failed.' }
+            $pgoStderr = Get-Content -Raw $packageStderr
+            if ($pgoStderr -notmatch '(?m)^native release stderr\r?$') { throw "Packaged PGO generation program did not preserve stderr separately. Actual stderr: $pgoStderr" }
+            if (($pgoOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged PGO output: $pgoOutput" }
+            $profileFiles = @(Get-ChildItem -LiteralPath $profileOutputDirectory -Filter '*.profraw' -File)
+            if ($profileFiles.Count -eq 0) {
+              $profileDirectoryContents = @(Get-ChildItem -LiteralPath $profileOutputDirectory -Force | ForEach-Object { $_.FullName }) -join "`n"
+              throw "Packaged PGO run completed without writing a profile. LLVM_PROFILE_FILE was '$env:LLVM_PROFILE_FILE'. Output directory contents: $profileDirectoryContents"
+            }
+            Copy-Item -LiteralPath $profileFiles.FullName -Destination $profileDirectory -Force
+            Write-Host "Packaged PGO generated $($profileFiles.Count) profile file(s)."
+          } finally {
+            if ($null -eq $previousProfileFile) {
+              Remove-Item Env:LLVM_PROFILE_FILE -ErrorAction SilentlyContinue
+            } else {
+              $env:LLVM_PROFILE_FILE = $previousProfileFile
+            }
+            Pop-Location
+          }
+          Push-Location $packageProject
+          try {
+            & (Join-Path $installed 'bin/tyrus.exe') pgo-merge
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged llvm-profdata merge failed.' }
+            & (Join-Path $installed 'bin/tyrus.exe') build --release --pgo-use
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged PGO use build failed.' }
+          } finally {
+            Pop-Location
+          }
+          Push-Location (Join-Path $packageProject 'nested')
+          try {
+            $pgoUseOutput = & (Join-Path $packageProject 'target/release/tyrus-release-smoke.exe') 2> $packageStderr
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged PGO use program failed.' }
+            if ((Get-Content -Raw $packageStderr).Trim() -ne 'native release stderr') { throw 'Packaged PGO use program did not preserve stderr separately.' }
+            if (($pgoUseOutput -join "`n").Trim() -ne "native release smoke`nnested cwd smoke`nnested path`n2`n2`ndisk usage ok") { throw "Unexpected packaged PGO use output: $pgoUseOutput" }
+          } finally {
+            Pop-Location
+          }
+          $checksumLine = (Get-Content -Raw "$archive.sha256").Trim()
+          $checksumMatch = [regex]::Match($checksumLine, '^([0-9a-f]{64})  ([^\r\n]+)$')
+          if (-not $checksumMatch.Success -or $checksumMatch.Groups[2].Value -ne (Split-Path $archive -Leaf)) { throw 'The Windows release checksum file has an invalid format.' }
+          $verifiedHash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($verifiedHash -ne $checksumMatch.Groups[1].Value) { throw 'The Windows release archive failed checksum verification after package smoke tests.' }
+      - name: Upload platform package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tyrus-${{ matrix.suffix }}
+          path: |
+            ${{ runner.temp }}/tyrus-${{ steps.release.outputs.version }}-${{ matrix.suffix }}.*
+          if-no-files-found: error
+          retention-days: 5
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Tyrus ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/*

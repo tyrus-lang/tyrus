@@ -1,0 +1,29 @@
+import { CompressFormat, compressionStream } from "tyrus:compress";
+import { ReadableStream, TransformStream, WritableStream } from "tyrus:stream";
+
+const firstLength = async (stream: ReadableStream<u8[]>): Promise<i32> => {
+    const chunk: u8[]? = await stream.read();
+    return (chunk ?? []).length as i32;
+};
+
+const feed = async (stream: WritableStream<u8[]>): Promise<void> => {
+    await stream.write([104, 101, 108, 108, 111]);
+    await stream.close();
+};
+
+const touch = async (transform: TransformStream<u8[], u8[]>): Promise<i32> => {
+    return 1;
+};
+
+const main = async (): Promise<void> => {
+    let total: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const touched: i32 = await touch(compressionStream(CompressFormat.Gzip));
+        const transform: TransformStream<u8[], u8[]> = compressionStream(CompressFormat.Gzip);
+        await feed(transform.writable);
+        const length: i32 = await firstLength(transform.readable);
+        const again: i32 = await touch(transform);
+        total += touched + again + (length > 0 ? 1 : 0);
+    }
+    print(total); // 600
+};

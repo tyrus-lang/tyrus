@@ -1,0 +1,30 @@
+{
+  "grammars": [
+    {
+      "name": "tyrus",
+      "camelcase": "Tyrus",
+      "scope": "source.tyr",
+      "path": ".",
+      "file-types": [
+        "tyrus"
+      ],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "tyrus grammar for tree-sitter (Zed, Neovim, ...).",
+    "links": {
+      "repository": "https://github.com/tyrus-lang/tyrus"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true
+  }
+}

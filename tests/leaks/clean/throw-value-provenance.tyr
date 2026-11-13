@@ -1,0 +1,91 @@
+// A `throw` leaves the scope for good. Two things used to leak: everything the
+// scope owned besides the thrown value (fixed earlier, `bystander` here), and
+// the thrown value itself once it reaches the handler, 2 bytes per iteration.
+//
+// The thrower must never release what it throws, the value travels to the
+// handler, and releasing it here would hand the handler freed memory. Whether
+// the *handler* may release it once it is done depends on where the value came
+// from, and that is decided at the throw site, the one place it is still known:
+// a fresh allocation (`throw "a".toUpperCase()`) or a local proven to hold one
+// (`throw held`, bound from an allocation and excluded from this scope's own
+// cleanup) may be freed; a literal or a borrowed parameter may not.
+//
+// That decision travels as a runtime bit alongside the thrown value, a byte
+// written at `throw`, read at `catch`, because a single `catch` can be reached
+// by several `throw` sites up the call stack, owned and not, with no static way
+// to tell which one fired.
+//
+// The shapes below cover the cases this has to get right, and two of them
+// surfaced real bugs while this was built:
+//
+//   `throw held` / `throw "cc".toUpperCase()`  the two allocated forms: freed.
+//   `throw "static literal"`                   never freed, would be an
+//                                               invalid free of static memory.
+//   `throw parameter`                          a borrowed value: never freed.
+//   rethrow from a catch                       ownership does not survive a
+//                                               rethrow, `error` in a catch
+//                                               body is not tracked as owned,
+//                                               so it leaks going further up
+//                                               rather than being freed twice.
+//                                               Guarded in `known/`, since
+//                                               leaking here is the deliberate,
+//                                               safe side.
+//
+// The first bug: releasing at `throw` originally reused the cleanup a `return`
+// performs, which also unwinds the catch contexts, right when leaving a
+// function, wrong when throwing, since the handler about to run is one of the
+// contexts it removes. Every `catch` within reach of a `throw` silently stopped
+// catching.
+//
+// The second, found while adding the runtime ownership bit: a separate,
+// specialized code path builds a catch context for a `try` whose `catch` body
+// contains an `await`, a case this file does not exercise directly, since it
+// needs `async`, but is covered by the Rust test suite. That path allocated its
+// context without wiring the new ownership field at all, leaving it reading
+// whatever garbage the stack held and writing an owned/not-owned bit through
+// it, a wild pointer store on every throw that reached an async catch. The
+// full workspace test suite caught it; this leak corpus, having no async case,
+// would not have.
+//
+// Expected output is 2800.
+const risky = (): string throws string => {
+    const bystander: string = "bb".toUpperCase();
+    const held: string = "a".toUpperCase();
+    throw held;
+};
+
+const throwsParameter = (message: string): string throws string => {
+    throw message;
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        try {
+            total += risky().length;
+        } catch (error: string) {
+            total += error.length;
+        }
+
+        try {
+            const inner: string = "cc".toUpperCase();
+            throw inner;
+        } catch (error: string) {
+            total += error.length;
+        }
+
+        try {
+            throw "static";
+        } catch (error: string) {
+            total += error.length;
+        }
+
+        try {
+            total += throwsParameter("param").length;
+        } catch (error: string) {
+            total += error.length;
+        }
+    }
+    console.log(total);
+    console.log("assert:", 2800);
+};

@@ -1,0 +1,25 @@
+// The spread half of `object-with-optional-fields-into-array-literal`. A spread
+// makes the buffer offsets run-time values, which is the shape any fix working
+// at the array's release plan cannot describe, so it is here to keep the fix
+// anchored where it belongs: at the field that copies the binding, before the
+// array ever sees the element.
+interface Options {
+    path?: string;
+    secure?: boolean;
+}
+
+interface Cookie {
+    name: string;
+    options?: Options;
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const options: Options = { path: "/", secure: true };
+        const base: Cookie[] = [{ name: "base" }];
+        const cookies: Cookie[] = [...base, { name: "theme", options: options }];
+        total += cookies.length;
+    }
+    console.log(total);
+};

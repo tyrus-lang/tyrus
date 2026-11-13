@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+#
+# Capture the behaviour of the compiler, so a structural refactor can prove it
+# changed nothing. Use this alongside the maintainers' refactor plan.
+#
+# What is captured, and why each one is needed:
+#   freeze       a frozen copy of the in-repository regression corpus
+#   ir           unoptimized LLVM IR for a fixed corpus, normalized
+#   diagnostics  code, message, range and help for programs that must fail
+#   fmt          the formatter's output, plus its idempotence
+#   run          stdout, exit status, and project IR of the local SIMD example
+#   tests        the test list, to catch a test lost while splitting files
+#   stack        the smallest stack that compiles the corpus
+#   timings      incremental build time and artifact sizes
+#   metrics      the size portrait the plan tracks between phases
+#
+# The IR only proves anything about `tyrus-codegen`. A program that still
+# compiles produces identical IR even when its diagnostics, its formatting or
+# its runtime behaviour changed, which is why the other captures exist.
+#
+# Usage:
+#   scripts/refactor-baseline                 # freeze the corpus and capture everything
+#   scripts/refactor-baseline --out DIR       # capture into DIR instead of the baseline
+#   scripts/refactor-baseline --skip-freeze   # keep the frozen corpus as it is
+#   scripts/refactor-baseline --only ir       # one capture only (repeatable)
+#
+# The baseline lives outside the repository and outside `target/`, because
+# `target/` is regenerable and the baseline is not: it is a portrait of the
+# `main` this refactor started from, and a stray `cargo clean` would take the
+# only reference that validates every phase.
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${project_dir}"
+
+baseline_dir="${TYRUS_REFACTOR_BASELINE:-${HOME}/.tyrus-refactor-baseline}"
+out_dir="${baseline_dir}"
+frozen_dir="${baseline_dir}/corpus"
+skip_freeze=0
+only=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --out) out_dir="$2"; shift 2 ;;
+        --skip-freeze) skip_freeze=1; shift ;;
+        --only) only+=("$2"); shift 2 ;;
+        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "usage: scripts/refactor-baseline [--out DIR] [--skip-freeze] [--only STEP]" >&2; exit 2 ;;
+    esac
+done
+
+wants() {
+    [[ ${#only[@]} -eq 0 ]] && return 0
+    local step
+    for step in "${only[@]}"; do
+        [[ "${step}" == "$1" ]] && return 0
+    done
+    return 1
+}
+
+step() { printf '\n== %s ==\n' "$1"; }
+
+tyrus_bin="${project_dir}/target/debug/tyrus"
+diagnostic_dir="${project_dir}/scripts/refactor/diagnostic-corpus"
+normalize="${project_dir}/scripts/refactor/normalize-ir.py"
+
+# The code generator recurses through the expression tree with a very large
+# stack frame per level, so compiling the corpus overflows the 2 MiB that a
+# libtest thread gets, while the same work succeeds from `tyrus build` on the
+# main thread. Raising the harness stack keeps the snapshot possible; the frame
+# size itself is a finding, recorded in the plan and measured again after phase 3.
+harness_stack="${TYRUS_REFACTOR_STACK:-268435456}"
+
+mkdir -p "${out_dir}"
+
+# ---------------------------------------------------------------- freeze ----
+# Freeze repository-owned examples so later changes cannot move the baseline
+# under the refactor's feet.
+if [[ ${skip_freeze} -eq 0 ]] && { wants freeze || wants ir || wants fmt || wants run || wants stack; }; then
+    step "freezing repository examples into ${frozen_dir}"
+    rm -rf "${frozen_dir}"
+    mkdir -p "${frozen_dir}/src/leaks"
+    cp -a "${project_dir}/tests/leaks/clean/." "${frozen_dir}/src/leaks/"
+    cp "${project_dir}/tests/fixtures/simd/examples.tyr" "${frozen_dir}/src/main.tyr"
+    printf '\nconst main = (): void => { runSimdArrayAddExamples(); };\n' >> "${frozen_dir}/src/main.tyr"
+    cat > "${frozen_dir}/tyrus.json" <<'EOF'
+{"project":{"name":"refactor-corpus","version":"0.1.0","authors":[],"description":"Compiler refactor regression corpus"},"dependencies":{}}
+EOF
+    echo "checking the frozen copy compiles"
+    if ! (cd "${frozen_dir}" && "${tyrus_bin}" check); then
+        echo "the frozen corpus does not compile; update its in-repository fixtures" >&2
+        exit 1
+    fi
+fi
+
+# -------------------------------------------------------------------- ir ----
+# The corpus combines the SIMD example project with isolated ownership fixtures.
+# Each self-contained source is compiled on its own, which keeps differences
+# easy to place instead of hiding them inside one enormous snapshot.
+if wants ir; then
+    step "IR snapshot"
+    entries_file="${baseline_dir}/ir-entries.txt"
+
+    if [[ ! -f "${entries_file}" ]]; then
+        echo "selecting the corpus (first run)"
+        candidates="${baseline_dir}/ir-candidates.txt"
+        mkdir -p "${baseline_dir}"
+        {
+            echo "${frozen_dir}/src/main.tyr"
+            # Anything importing a project-relative module needs the project
+            # around it, so only self-contained examples are entry points.
+            grep -rLP 'from "(?!tyrus:)' --include='*.tyr' "${frozen_dir}/src" | sort
+        } > "${candidates}"
+        probe="${baseline_dir}/ir-probe"
+        rm -rf "${probe}"
+        TYRUS_IR_SNAPSHOT_ENTRIES="${candidates}" TYRUS_IR_SNAPSHOT_OUT="${probe}" \
+            TYRUS_IR_SNAPSHOT_ALLOW_FAILURES=1 RUST_MIN_STACK="${harness_stack}" \
+            cargo test -p tyrus-codegen --test ir_snapshot -- --ignored --quiet
+        {
+            echo "# corpus for the refactor IR snapshot, selected once from the frozen copy"
+            echo "# a program that stops compiling from here on is a regression, not a skip"
+            awk '$1 == "ok" { print $3 }' "${probe}/manifest.txt"
+        } > "${entries_file}"
+        awk '$1 == "fail" { print $3 }' "${probe}/manifest.txt" > "${baseline_dir}/ir-excluded.txt"
+        rm -rf "${probe}"
+        echo "corpus: $(grep -vc '^#' "${entries_file}") programs, $(grep -c . "${baseline_dir}/ir-excluded.txt") excluded"
+    fi
+
+    capture_ir() {
+        rm -rf "$1"
+        TYRUS_IR_SNAPSHOT_ENTRIES="${entries_file}" TYRUS_IR_SNAPSHOT_OUT="$1" \
+            RUST_MIN_STACK="${harness_stack}" \
+            cargo test -p tyrus-codegen --test ir_snapshot -- --ignored --quiet
+        python3 "${normalize}" --in-place "$1" > /dev/null
+    }
+
+    capture_ir "${out_dir}/ir"
+    # Determinism gate: a snapshot that differs from itself invalidates the
+    # whole comparison strategy, so it is checked before anything is trusted.
+    capture_ir "${out_dir}/ir-repeat"
+    if diff -r "${out_dir}/ir" "${out_dir}/ir-repeat" > "${out_dir}/ir-determinism.diff"; then
+        echo "IR is deterministic across two runs"
+        rm -rf "${out_dir}/ir-repeat"
+        rm -f "${out_dir}/ir-determinism.diff"
+    else
+        echo "IR is NOT deterministic; see ${out_dir}/ir-determinism.diff" >&2
+        exit 1
+    fi
+fi
+
+# ----------------------------------------------------------- diagnostics ----
+# Run through a throwaway project because `tyrus check` works on a project,
+# which is also how a user meets these messages.
+if wants diagnostics; then
+    step "diagnostics"
+    work="${out_dir}/diagnostics-work"
+    dest="${out_dir}/diagnostics"
+    rm -rf "${work}" "${dest}"
+    mkdir -p "${work}/src" "${dest}"
+    cp "${project_dir}/scripts/refactor/diagnostic-project.json" "${work}/tyrus.json"
+    for case_file in "${diagnostic_dir}"/*.tyr; do
+        name="$(basename "${case_file}" .tyr)"
+        cp "${case_file}" "${work}/src/main.tyr"
+        (cd "${work}" && "${tyrus_bin}" check) > "${dest}/${name}.out" 2>&1 || true
+        # The absolute path of the throwaway project is not part of the message.
+        python3 - "${dest}/${name}.out" "${work}" <<'PY'
+import sys, pathlib
+path, work = pathlib.Path(sys.argv[1]), sys.argv[2]
+path.write_text(path.read_text().replace(work, "<project>"))
+PY
+    done
+    rm -rf "${work}"
+    echo "captured $(find "${dest}" -name '*.out' | wc -l) diagnostic cases"
+fi
+
+# ------------------------------------------------------------------- fmt ----
+if wants fmt; then
+    step "formatter output"
+    dest="${out_dir}/fmt"
+    rm -rf "${dest}"
+    rm -f "${out_dir}/fmt-not-idempotent.txt"
+    mkdir -p "${dest}"
+    while IFS= read -r file; do
+        relative="${file#"${frozen_dir}/"}"
+        target="${dest}/${relative}"
+        mkdir -p "$(dirname "${target}")"
+        (cd "${frozen_dir}" && "${tyrus_bin}" fmt --stdout "${file}") > "${target}"
+        # Idempotence: formatting the formatted text must be a no-op. A file
+        # that fails is recorded rather than fatal, because one of them already
+        # does (see the findings in the plan) and the capture is still the
+        # baseline to compare against.
+        second="$(cd "${frozen_dir}" && "${tyrus_bin}" fmt --stdout "${target}")"
+        if [[ "${second}" != "$(cat "${target}")" ]]; then
+            echo "${relative}" >> "${out_dir}/fmt-not-idempotent.txt"
+        fi
+    done < <(find "${frozen_dir}/src" -name '*.tyr' | sort)
+    not_idempotent=0
+    [[ -f "${out_dir}/fmt-not-idempotent.txt" ]] && not_idempotent="$(grep -c . "${out_dir}/fmt-not-idempotent.txt")"
+    echo "captured $(find "${dest}" -name '*.tyr' | wc -l) formatted files, ${not_idempotent} not idempotent"
+fi
+
+# ------------------------------------------------------------------- run ----
+if wants run; then
+    step "end to end output of the frozen SIMD example project"
+    dest="${out_dir}/run"
+    mkdir -p "${dest}"
+    set +e
+    (cd "${frozen_dir}" && "${tyrus_bin}" run) > "${dest}/refactor-corpus.stdout" 2> "${dest}/refactor-corpus.stderr"
+    echo $? > "${dest}/refactor-corpus.status"
+    set -e
+    echo "exit status $(cat "${dest}/refactor-corpus.status"), $(wc -l < "${dest}/refactor-corpus.stdout") lines of stdout"
+    # The whole project's IR, which the harness cannot produce: compiling
+    # `main.tyr` on its own fails with E3140, because the harness passes no env
+    # schema while `tyrus.json` declares one. `tyrus run` has just written it.
+    project_ir="${frozen_dir}/target/refactor-corpus.ll"
+    if [[ -f "${project_ir}" ]]; then
+        mkdir -p "${out_dir}/ir-project"
+        cp "${project_ir}" "${out_dir}/ir-project/refactor-corpus.ll"
+        python3 "${normalize}" --in-place "${out_dir}/ir-project" > /dev/null
+        echo "captured the whole project IR ($(wc -l < "${out_dir}/ir-project/refactor-corpus.ll") lines)"
+    fi
+fi
+
+# ----------------------------------------------------------------- tests ----
+if wants tests; then
+    step "test inventory"
+    dest="${out_dir}/tests"
+    mkdir -p "${dest}"
+    if command -v cargo-nextest > /dev/null 2>&1; then
+        cargo nextest list --workspace 2>/dev/null | sort > "${dest}/list.txt"
+    else
+        echo "cargo-nextest missing; falling back to cargo test --list" >&2
+        cargo test --workspace -- --list 2>/dev/null | grep ': test$' | sort > "${dest}/list.txt"
+    fi
+    grep -c . "${dest}/list.txt" > "${dest}/count.txt" || true
+    echo "$(cat "${dest}/count.txt") test entries recorded"
+fi
+
+# ----------------------------------------------------------------- stack ----
+# The smallest stack the code generator needs for the corpus. Phase 3 should
+# bring it down; the number is meaningless without one taken first.
+if wants stack; then
+    step "stack requirement"
+    mkdir -p "${out_dir}/metrics"
+    python3 "${project_dir}/scripts/refactor/measure-stack.py" \
+        "${baseline_dir}/ir-entries.txt" | tee "${out_dir}/metrics/stack.txt"
+fi
+
+# --------------------------------------------------------------- timings ----
+if wants timings; then
+    step "build and artifact sizes"
+    dest="${out_dir}/metrics"
+    mkdir -p "${dest}"
+    {
+        echo "captured $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo
+        echo "incremental build after touching expressions.rs:"
+        touch "${project_dir}/crates/tyrus-codegen/src/expressions/expressions.rs"
+        start_seconds="${SECONDS}"
+        cargo build --workspace > /dev/null 2>&1
+        echo "  $((SECONDS - start_seconds)) seconds"
+        echo
+        echo "artifact sizes:"
+        for artifact in target/debug/tyrus target/debug/libtyrus_runtime.a target/release/libtyrus_runtime.a; do
+            [[ -f "${project_dir}/${artifact}" ]] && printf '  %s %s\n' \
+                "$(du -h "${project_dir}/${artifact}" | cut -f1)" "${artifact}"
+        done
+        echo
+        echo 'per crate build time is in target/cargo-timings/ after: cargo build --timings'
+    } > "${dest}/timings.txt" 2>&1
+    cat "${dest}/timings.txt"
+fi
+
+# --------------------------------------------------------------- metrics ----
+if wants metrics; then
+    step "size portrait"
+    mkdir -p "${out_dir}/metrics"
+    "${project_dir}/scripts/refactor-metrics" > "${out_dir}/metrics/portrait.txt"
+    echo "wrote ${out_dir}/metrics/portrait.txt"
+fi
+
+printf '\nbaseline in %s\n' "${out_dir}"

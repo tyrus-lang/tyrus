@@ -1,0 +1,3 @@
+```tyrus
+printError("Connection refused");
+```

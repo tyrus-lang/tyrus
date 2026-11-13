@@ -1,0 +1,25 @@
+// `let scores: Map<K, V>;` and `let seen: Set<T>;` build their empty collection
+// at the declaration, with no constructor call. The annotation already names
+// everything an empty one needs, so repeating it in `= Map<K, V>()` was pure
+// ceremony.
+//
+// The hash table behind each is a native allocation, so the binding has to be
+// registered as owning it exactly as the explicit constructor's result was,
+// this case is here because that registration is easy to forget when the value
+// is produced by the declaration itself rather than by an initializer.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 500; i += 1) {
+        let scores: Map<string, i32>;
+        scores.set("alpha", i);
+        scores.set("beta", i + 1);
+        total += scores.size;
+
+        let seen: Set<i32>;
+        seen.add(i);
+        seen.add(i);
+        total += seen.size;
+    }
+    console.log(total);
+    console.log("assert:", 1500);
+};

@@ -1,0 +1,10 @@
+[package]
+name = "tyrus-encoding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure canonical codecs shared by the Tyrus runtime: UTF-16, hexadecimal, Base64, Base32, and radix."
+
+[lints]
+workspace = true

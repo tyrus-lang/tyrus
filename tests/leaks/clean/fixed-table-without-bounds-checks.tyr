@@ -1,0 +1,50 @@
+// A `const` array literal has its element count written in the source, so the
+// compiler drops the bounds check for a literal index below that count and for
+// a counting loop over the whole table.
+//
+// This is here rather than only in an IR test because the failure mode of that
+// removal is a read past the end of the buffer, which is not a leak and which
+// the fast backend cannot see. Valgrind reports it as an invalid read.
+//
+// It is regression coverage, not a trap a single mutation springs: the type
+// checker rejects an out-of-range constant index with `E0606` before code
+// generation is reached, and it tracks the length through mutations better than
+// this rule does, so no program it accepts can reach a bad constant index. What
+// this case actually watches is the whole path staying in agreement, the
+// promotion of the global to read-only memory, the removal of the checks, and
+// the release at the end of `main` that must not happen.
+//
+// The last valid slot is read explicitly, and the local table covers the same
+// rule applied to a stack buffer, where a read one element past the end lands
+// in the frame rather than in `.rodata` and so is the one more likely to go
+// unnoticed.
+readonly const TABLE: i32[] = [3, 1, 4, 1, 5, 9, 2, 6];
+const LABELS: string[] = ["alpha", "beta", "gamma"];
+
+export function main(): void {
+    console.log(TABLE[0]);
+    console.log("assert:", 3);
+    console.log(TABLE[7]);
+    console.log("assert:", 6);
+
+    let sum: i32 = 0;
+    for (let i: usize = 0; i < TABLE.length; i += 1) {
+        sum += TABLE[i];
+    }
+    console.log(sum);
+    console.log("assert:", 31);
+
+    console.log(LABELS[2]);
+    console.log("assert:", "gamma");
+
+    const local: i32[] = [10, 20, 30];
+    console.log(local[0] + local[2]);
+    console.log("assert:", 40);
+
+    let scanned: i32 = 0;
+    for (let i: usize = 0; i < local.length; i += 1) {
+        scanned += local[i];
+    }
+    console.log(scanned);
+    console.log("assert:", 60);
+}

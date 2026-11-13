@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tyrus Playground</title>
+    <link rel="icon" href="/img/favicon.png" />
+    <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <a href="/" class="logo-link"><h1><img src="/img/tyrus-logo.png" alt="Tyrus" width="40" height="40"> Tyrus Playground</h1></a>
+            <div class="controls">
+                <select id="examples">
+                    <option value="" disabled selected>Examples</option>
+                </select>
+                <button id="share-btn">🔗 Share</button>
+                <button id="theme-toggle" title="Toggle theme">🌙</button>
+            </div>
+        </header>
+        <main>
+            <div id="editor-container">
+                <div id="editor-pane">
+                    <div id="editor"></div>
+                    <div id="run-bar">
+                        <button id="run-btn" title="Ctrl+Enter to run, Esc to cancel">▶ Run</button>
+                    </div>
+                </div>
+            </div>
+            <div id="resize-handle"></div>
+            <div id="output-container">
+                <div id="output-header">
+                    <span>Output</span>
+                    <button id="clear-btn" title="Clear output">✕</button>
+                </div>
+                <div id="output"></div>
+            </div>
+        </main>
+        <footer class="status-bar">
+            <div class="status running" id="status">Loading editor...</div>
+            <a class="footer-link" href="https://tyruslang.org" target="_blank" rel="noopener noreferrer">Tyrus</a>
+        </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

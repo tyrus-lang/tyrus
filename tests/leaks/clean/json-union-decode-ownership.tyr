@@ -1,0 +1,56 @@
+// Three leaks on the way in from JSON, all of them per document decoded.
+//
+// `tyrus_json_variant_tag` renders the discriminant into a fresh string and
+// hands it over, and nothing released it: one string per union read back.
+//
+// A literal type is stored as whatever its literal is, which `llvm_type` and
+// `type_layout` have always resolved through `lit_underlying_type` while the
+// clone and drop walkers did not. So `kind: "failed"` was laid out as a
+// `string`, decoded into an allocated one, and then released by nobody. The
+// predicate that decides whether a value can be owned already answered `true`
+// for a literal type, which is what made this a leak rather than a refusal.
+//
+// A field that fails to decode leaves the fields before it decoded and owned by
+// nobody: the object is never returned, so nothing downstream releases it.
+// That is the one worth caring about most, because a caller sending malformed
+// documents chooses how much of it to cause, and this file spends most of its
+// iterations there for that reason.
+interface Job {
+    id: i32;
+    label: string;
+    state: { kind: "done"; value: i32 } | { kind: "failed"; reason: string };
+}
+
+function decodeOne(text: string): i32 {
+    const decoded = Job.fromJson(text);
+    if (decoded) {
+        const parsed: Job = decoded;
+        return parsed.id;
+    } else {
+        const failure: JsonError = decoded;
+        return failure.code.length as i32 > 0 ? 0 : -1;
+    }
+}
+
+function main(): void {
+    let accepted: i32 = 0;
+    let refused: i32 = 0;
+    for (let index: i32 = 0; index < 50; index += 1) {
+        // Reads back, with a string inside the live variant.
+        const good: i32 = decodeOne("{\"id\":1,\"label\":\"first\",\"state\":{\"kind\":\"failed\",\"reason\":\"timeout\"}}");
+        accepted += good;
+        // Fails on the variant's own field, after its discriminant decoded.
+        const partial: i32 = decodeOne("{\"id\":2,\"label\":\"second\",\"state\":{\"kind\":\"done\"}}");
+        refused -= partial;
+        // Fails on a field of the object itself, after an earlier one decoded.
+        const missing: i32 = decodeOne("{\"id\":3,\"label\":\"third\"}");
+        refused -= missing;
+        // The discriminant names no declared variant.
+        const stranger: i32 = decodeOne("{\"id\":4,\"label\":\"fourth\",\"state\":{\"kind\":\"cancelled\"}}");
+        refused -= stranger;
+    }
+    console.log(accepted);
+    console.log("assert:", 50);
+    console.log(refused);
+    console.log("assert:", 0);
+}

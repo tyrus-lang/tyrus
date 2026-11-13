@@ -1,0 +1,6 @@
+function main(): void {
+    const values: string[] = ["alpha"];
+    const mapped: string[] = values.map((value) => value);
+    console.log(mapped[0]);
+    console.log("assert:", "alpha");
+}

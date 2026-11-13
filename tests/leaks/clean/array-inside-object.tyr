@@ -1,0 +1,19 @@
+// Phase 2 follow-up. An object field holding an array leaks the array's buffer,
+// 12 bytes per iteration.
+//
+// An object is claimed today by looking at its *string* fields, so one whose
+// only allocable content is an array is never claimed. Same root as
+// `object-with-mixed-strings`: ownership has to be decided per field, and the
+// release has to know how to free each kind of field.
+interface Bucket {
+    values: i32[];
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const bucket: Bucket = { values: [1, 2, 3] };
+        total += bucket.values.length;
+    }
+    console.log(total);
+};

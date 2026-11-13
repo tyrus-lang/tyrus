@@ -1,0 +1,11 @@
+// A method that builds a fresh string hands the allocation to the caller.
+// Released at scope exit since the ownership was recorded.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const shouted: string = "abc".toUpperCase();
+        const padded: string = shouted.padStart(6, ".");
+        total += padded.trim().length;
+    }
+    console.log(total);
+};

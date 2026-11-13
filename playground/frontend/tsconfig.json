@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "vite.config.ts"],
+  // worker-runtime.ts runs in a WebWorker scope, not window/document, TS can't
+  // mix the "DOM" and "WebWorker" libs, so it's checked via tsconfig.worker.json instead.
+  "exclude": ["src/worker-runtime.ts"]
+}

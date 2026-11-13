@@ -1,0 +1,52 @@
+// `at`/`find`/`findLast`/`pop`/`shift` box a fresh `T?` for any element
+// type, including `Copy` ones, none were in `array_method_allocates`, so
+// every box leaked, regardless of element type.
+//
+// `pop`/`shift` needed a second, sharper fix: a first attempt released the
+// popped/shifted box with `Deep` unconditionally, reasoning that removal
+// transfers ownership of the element, correct for `computed` below, but a
+// pure `string[]` literal like `words` never `strdup`s its elements, so
+// freeing a removed one the same way tried to `free()` a `.rodata` address
+// (an actual crash caught before this fix, not just a leak). Closed by
+// looking up the receiver's own registered plan and only using `Deep` when
+// it proves the elements are themselves allocations; `at`/`find`/`findLast`
+// always use `Value` instead, since they never remove the element, the
+// array still owns it afterward, so recursing into the box would double
+// free what the array frees later.
+//
+// Expected output is 7800.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let words: string[] = ["alpha", "beta", "gamma", "delta"];
+        let computed: string[] = ["ALPHA".toLowerCase(), "BETA".toLowerCase(), "GAMMA".toLowerCase()];
+
+        const atValue: string? = words.at(1);
+        const found: string? = words.find((w: string): boolean => w === "gamma");
+        const foundLast: string? = words.findLast((w: string): boolean => w.length === 5);
+        total += (atValue ?? "").length + (found ?? "").length + (foundLast ?? "").length;
+
+        // Unbound temporaries: never named, swept at end of scope.
+        words.at(0);
+        words.find((w: string): boolean => w === "alpha");
+        words.findLast((w: string): boolean => w === "delta");
+
+        // Rebind.
+        let rebound: string? = words.at(2);
+        rebound = words.at(3);
+        total += (rebound ?? "").length;
+
+        // `pop`/`shift` on a pure-literal receiver: box only, never the
+        // (static, unowned) element.
+        const popped: string? = words.pop();
+        const shifted: string? = words.shift();
+        total += (popped ?? "").length + (shifted ?? "").length;
+
+        // `pop`/`shift` on a dynamically-owned receiver: box *and* element.
+        const poppedOwned: string? = computed.pop();
+        const shiftedOwned: string? = computed.shift();
+        total += (poppedOwned ?? "").length + (shiftedOwned ?? "").length;
+    }
+    console.log(total);
+    console.log("assert:", 7800);
+};

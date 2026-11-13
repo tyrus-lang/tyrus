@@ -1,0 +1,53 @@
+// `await load()?` awaits first and propagates the `Result`, and an `await` in
+// a `match` subject or inside an expression within a loop is hoisted into a
+// `const`; every path, including a string read from a field, must release
+// exactly what it allocated.
+interface User {
+    name: string;
+}
+
+const load = async (ok: boolean): Promise<Result<i32, string>> => {
+    if (ok) {
+        return Ok(40);
+    }
+    return Err(`load ${"failed"}`);
+};
+
+const user = async (ok: boolean): Promise<Result<User, string>> => {
+    if (ok) {
+        const found: User = { name: `Ada ${"L"}` };
+        return Ok(found);
+    }
+    return Err("no user");
+};
+
+const next = async (ok: boolean): Promise<Result<i32, string>> => {
+    const value = await load(ok)?;
+    return Ok(value + 1);
+};
+
+const inline = async (ok: boolean): Promise<Result<i32, string>> => {
+    return Ok(await load(ok)? + 2);
+};
+
+const field = async (ok: boolean): Promise<Result<string, string>> => {
+    const name = (await user(ok)?).name;
+    return Ok(name);
+};
+
+const main = async (): Promise<void> => {
+    for (let round = 0; round < 20; round += 1) {
+        match (await next(round === 0)) {
+            Ok(value) => { print("next", value); }
+            Err(error) => { print("next", error); }
+        }
+        match (await inline(round === 0)) {
+            Ok(value) => { print("inline", value); }
+            Err(error) => { print("inline", error); }
+        }
+        match (await field(round === 0)) {
+            Ok(value) => { print("field", value); }
+            Err(error) => { print("field", error); }
+        }
+    }
+};

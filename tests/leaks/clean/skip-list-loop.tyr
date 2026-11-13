@@ -1,0 +1,55 @@
+// SkipList in a 200-iteration loop, with a rebind, unbound temporaries, and
+// deterministic hits and misses.
+import { SkipList } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let sl = SkipList<i32>();
+        sl.insert(5);
+        sl.insert(3);
+        sl.insert(8);
+        if (sl.contains(3)) {
+            total += 1;
+        }
+        if (sl.contains(4)) {
+            total += 1;
+        }
+        if ((sl.min() ?? 0) > 0) {
+            total += 1;
+        }
+        const largest: i32 = sl.max() ?? 0;
+        if (largest === 8) {
+            total += 1;
+        }
+        if (sl.remove(3)) {
+            total += 1;
+        }
+        if (sl.contains(3)) {
+            total += 1;
+        }
+        sl = SkipList<i32>();
+        sl.insert(9);
+        if ((sl.min() ?? 0) === 9) {
+            total += 1;
+        }
+
+        const strSl = SkipList<string>();
+        strSl.insert("banana");
+        const smallest: string = strSl.min() ?? "";
+        if (smallest === "banana") {
+            total += 1;
+        }
+
+        if (SkipList<i32>().isEmpty()) {
+            total += 1;
+        }
+        const bound: boolean = SkipList<i32>().insert(1);
+        if (bound) {
+            total += 1;
+        }
+        total += SkipList<i32>().len();
+    }
+    console.log(total);
+    console.log("assert:", 1600);
+};

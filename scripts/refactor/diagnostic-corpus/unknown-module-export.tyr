@@ -1,0 +1,5 @@
+import { thisDoesNotExist } from "tyrus:os";
+
+const main = (): void => {
+    console.log(thisDoesNotExist());
+};

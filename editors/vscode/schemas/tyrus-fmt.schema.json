@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "tyrus-fmt Configuration",
+  "description": "Configuration schema for the tyrus formatter.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "array_expand": {
+      "type": "string",
+      "default": "simple",
+      "enum": ["simple", "expand-all", "off"],
+      "description": "When to expand array literals to multi-line, or off to keep them inline even past line_width."
+    },
+    "blank_lines": {
+      "type": "string",
+      "default": "collapse",
+      "enum": ["collapse", "off"],
+      "description": "Blank lines between imports/items sections and around control flow blocks."
+    },
+    "blank_lines_around_blocks": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to add a blank line before and after block statements (if, for, while, do...while, match, switch) and function declarations."
+    },
+    "blank_lines_around_decorations": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to add a blank line around interface/type fields that carry validator decorations."
+    },
+    "brace_spacing": {
+      "type": "boolean",
+      "default": true,
+      "description": "Space between curly braces and their content."
+    },
+    "brace_style": {
+      "type": "string",
+      "default": "same-line",
+      "enum": ["same-line", "next-line", "off"],
+      "description": "Placement of opening braces, or off to preserve each source layout."
+    },
+    "final_newline": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to end the file with a newline."
+    },
+    "indent_style": {
+      "type": "string",
+      "default": "spaces",
+      "enum": ["spaces", "tab"],
+      "description": "Indentation character."
+    },
+    "indent_width": {
+      "type": "integer",
+      "default": 4,
+      "minimum": 0,
+      "description": "Number of spaces per indentation level."
+    },
+    "imports_sort": {
+      "type": "boolean",
+      "default": true,
+      "description": "Sort imports alphabetically; true enables sorting with language imports (tyrus:…) grouped at top."
+    },
+    "line_width": {
+      "type": "integer",
+      "default": 80,
+      "minimum": 0,
+      "description": "Maximum line length in characters."
+    },
+    "object_expand": {
+      "type": "string",
+      "default": "simple",
+      "enum": ["simple", "expand-all", "off"],
+      "description": "When to expand object literals to multi-line, or off to keep them inline even past line_width."
+    },
+    "pipeline_chain_layout": {
+      "type": "string",
+      "default": "line-by-line",
+      "enum": ["line-by-line", "inline", "off"],
+      "description": "How to print pipeline chains with more than one |>, or off to preserve each chain's original layout."
+    },
+    "prefer_arrow_function": {
+      "type": "boolean",
+      "default": false,
+      "description": "Force a top-level function declaration to a const bound to an arrow function (true), or leave each declaration in whichever form it was written, mixing function and arrow freely (false)."
+    },
+    "quote_style": {
+      "type": "string",
+      "default": "double",
+      "enum": ["double", "single", "off"],
+      "description": "Preferred quotation mark for string literals, or off to preserve the delimiter and escapes written in the source."
+    },
+    "remove_unused_imports": {
+      "type": "boolean",
+      "default": true,
+      "description": "Remove unused import specifiers and delete import declarations that become empty."
+    },
+    "trailing_comma": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to add trailing commas to multi-line literals."
+    }
+  }
+}

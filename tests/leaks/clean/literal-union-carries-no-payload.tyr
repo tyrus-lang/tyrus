@@ -1,0 +1,69 @@
+// A union whose every variant is a literal type is represented by its tag
+// alone: the tag does not merely say which variant is live, it says what the
+// value is. Reading a variant out of one materializes a constant instead of
+// loading from a payload that no longer exists.
+//
+// That is why this case is here. The old representation kept a 16-byte `string`
+// payload, and code that released it existed; if any of it survived the change,
+// it would now be freeing an address computed from a zero-width field, reading
+// or freeing memory that belongs to whatever follows the union in its frame.
+// The text a variant renders to lives in read-only memory and must never reach
+// `free`, and valgrind is what says so rather than a byte count.
+//
+// The loop and the array are what turn a per-value mistake into something
+// measurable, and the interface field is the position that pays most: the union
+// went from 24 bytes to one, so `Row` went from 40 to 8.
+type Status = "active" | "inactive" | "pending";
+type Level = 1 | 2 | 3;
+
+interface Row {
+    id: i32;
+    status: Status;
+}
+
+function pick(index: i32): Status {
+    if (index % 3 === 0) {
+        return "active";
+    }
+    if (index % 3 === 1) {
+        return "inactive";
+    }
+    return "pending";
+}
+
+function code(status: Status): i32 {
+    match (status) {
+        "active" => {
+            return 1;
+        }
+        "inactive" => {
+            return 2;
+        }
+        _ => {
+            return 3;
+        }
+    }
+}
+
+export function main(): void {
+    let rows: Row[] = [];
+    for (let index: i32 = 0; index < 300; index += 1) {
+        rows.push({ id: index, status: pick(index) });
+    }
+
+    let total: i32 = 0;
+    let letters: usize = 0;
+    for (let index: usize = 0; index < rows.length; index += 1) {
+        total += code(rows[index].status);
+        const line: string = `row=${rows[index].status}`;
+        letters += line.length;
+    }
+    console.log(total);
+    console.log("assert:", 600);
+    console.log(letters);
+    console.log("assert:", 3300);
+
+    const level: Level = 3;
+    console.log(`level=${level}`);
+    console.log("assert:", "level=3");
+}

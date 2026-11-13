@@ -1,0 +1,42 @@
+// Found implementing `splitAt` (`words.splitAt(1)[1].splitAt(1)`), but not
+// caused by it: `const nested = words.slice(1, 3).slice(0, 1);` leaked
+// identically with no `splitAt` or `Tuple` involved at all, so the root
+// cause was in the pre-existing chained-method-call ownership path itself.
+//
+// Binding a chained allocating call's result to a name, rather than
+// discarding it or reading only a scalar field like `.length`, takes
+// `VarDecl`'s "nested owned" branch (`has_nested_owned_native_results`,
+// true because the inner call's own result is still separately pending).
+// That branch deep-clones the bound value into its slot (correct) and then
+// calls `emit_async_cleanup_source_expression` to release the *original*,
+// pre-clone value, but that function only recognized a plain user function
+// call (`owned_user_function_call`) as a provable allocation, never a
+// `MethodCall`. For any type that fell through to its final, generic
+// `owned_user_function_call`-gated fallback (which includes `Type::Tuple`,
+// with no dedicated arm of its own, and, since `async_string_array_
+// ownership_mode` does not recognize a chained `MethodCall` either,
+// `Type::Array(string)`), the original value's buffers were silently never
+// freed at all: only *forgotten* from tracking, not released. The
+// left-over inner call's own pending entry was never the leak, that gets
+// swept correctly by the very next statement's ordinary discard.
+//
+// Fixed with a new predicate, `owned_array_method_call` (the array-receiver
+// sibling of `owned_user_function_call`): recognizes any `MethodCall` whose
+// method is in `array_method_allocates` as a provable allocation, ORed into
+// the same generic fallback guard. `emit_owned_native_value_free` already
+// delegates to `emit_async_drop_value_in_place`, which has correct arms for
+// both `Type::Tuple` (from `map-entries-buffers`/`tuple-owned-return-clone`)
+// and `Type::Array(Str)`, so nothing new was needed there, recognizing the
+// expression shape was the entire gap. Confirmed with valgrind reporting
+// zero heap blocks in use at exit for both the `splitAt` chain and the
+// plain `.slice().slice()` chain that first proved this was pre-existing.
+const main = (): void => {
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const words: string[] = ["alpha", "beta", "gamma"];
+        const nested = words.splitAt(1)[1].splitAt(1);
+        console.log(nested[0]);
+
+        const sliced = words.slice(1, 3).slice(0, 1);
+        console.log(sliced[0]);
+    }
+};

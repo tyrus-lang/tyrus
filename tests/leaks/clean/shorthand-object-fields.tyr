@@ -1,0 +1,22 @@
+// `{ name }` desugars at parse time to a field whose value is `Ident(name)`
+// (the exact same AST shape `{ name: name }` already produces) so the
+// existing object-literal ownership rules (an `Ident` field borrows/moves
+// whatever the local already owns; the object claims itself only when every
+// field was independently provable as a fresh allocation) apply unchanged.
+// Guards the shape rather than a past bug: an owned `string` field reached
+// only through shorthand, in a loop, across 200 iterations.
+interface Holder {
+    text: string;
+    count: i32;
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const text: string = "y".toUpperCase();
+        const count: i32 = 1;
+        const holder: Holder = { text, count };
+        total += holder.text.length;
+    }
+    console.log(total);
+};

@@ -1,0 +1,43 @@
+// A `T?` box `.get()` hands back and nobody ever claimed.
+//
+// `tyrus_map_get` always mallocs a fresh box for its result, a hit copies
+// the value into it, a miss returns null, documented at its own definition
+// in `crates/tyrus-runtime/src/map.rs`. Nothing registered that allocation:
+// the general owned-container check at a call site reacts to a `FnCall`, not
+// a `MethodCall`, and `get`'s own type hint is already `Optional`, which is
+// exactly what excludes it from the bare-literal-box path in `VarDecl` (that
+// path exists for the opposite shape, a bare value coerced *into* `T?`,
+// and deliberately declines anything already optional-typed, on the
+// assumption something else claims those; nothing did, for this one).
+// `shared.get(key) ?? fallback` leaked 4 bytes per call, the size of the
+// `i32` payload's box, found while chasing an unrelated leak in this file
+// and confirmed unrelated to it (reproduces on its own, with nothing else
+// touched).
+//
+// Closed by registering the result where `get` is dispatched, the same way
+// an allocating array or string method already does immediately after its
+// own low-level call, not deferred to the binding, since this call result
+// is a single straight-line value with no branching in between to worry
+// about dominance over. `ReleasePlan::Deep` on `Optional<i32>` frees the box
+// and would recurse into the payload too, for a value type where that
+// matters; `i32` here does not, but the plan is the one already used for a
+// bound optional payload elsewhere in this file, not the narrower `Value`
+// used only for a bare literal's own box.
+const conditional = (present: boolean): i32 => {
+    const shared = Map<string, i32>();
+    shared.set("a", 1);
+    if (present) {
+        return shared.get("a") ?? -1;
+    }
+    return shared.get("missing") ?? -1;
+};
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        total += conditional(true);
+        total += conditional(false);
+    }
+    console.log(total);
+    console.log("assert:", 0);
+};

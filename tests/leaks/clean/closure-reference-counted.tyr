@@ -1,0 +1,64 @@
+// Closures whose environment is shared by more than one owner, freed exactly
+// once by reference counting.
+//
+// A closure value is a `{ function, environment }` pair copied by value, so
+// aliasing it, passing it, returning it, or capturing it makes several owners
+// point at one heap environment. The environment carries a count in its header;
+// each copy that adds an owner retains, each owner releases when it goes out of
+// scope, and the last release tears it down. This replaced a conservative
+// escape analysis that could only own a closure proven never shared, every
+// shape below leaked, or, in an earlier attempt, was freed twice.
+//
+// Each shape exercises a different owner relationship, and each was validated
+// for invalid frees as well as for leaks:
+//
+//   alias         a second binding copies the closure, retain, two owners
+//   borrow        passed to a function that only calls it, no new owner
+//   return-param  a function returns its parameter, retain, so the caller owns
+//   capturer      a closure captures another and escapes, retain, released by
+//                 the capturer's destructor
+//   temporary     a closure made only to be called or passed, released after
+//
+// Expected output is 2000.
+const makeCounter = (label: string): () => usize => {
+    const held: string = label.toUpperCase();
+    return (): usize => {
+        return held.length;
+    };
+};
+
+const apply = (f: () => usize): usize => {
+    return f();
+};
+
+const passthrough = (f: () => usize): () => usize => {
+    return f;
+};
+
+const capturerEscapes = (): () => usize => {
+    const inner = makeCounter("ab");
+    return (): usize => {
+        return inner();
+    };
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const aliased = makeCounter("ab");
+        const alias = aliased;
+        total += alias();
+
+        const borrowed = makeCounter("ab");
+        total += apply(borrowed);
+
+        const returned = passthrough(makeCounter("ab"));
+        total += returned();
+
+        total += capturerEscapes()();
+
+        total += apply(makeCounter("ab"));
+    }
+    console.log(total);
+    console.log("assert:", 2000);
+};

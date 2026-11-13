@@ -1,0 +1,12 @@
+[package]
+name = "tyrus-validators"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared pure validators for Tyrus compile-time and runtime checks."
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,46 @@
+// A `.copy()` result held across an `await` is freed exactly once.
+//
+// `copy()` lowers to the same deep clone the async frame uses to take
+// ownership, so the frame owns the buffer outright: the source it was cloned
+// from is untouched, and the clone is released when the frame is. The lists
+// that record which initializers give a frame that ownership did not name
+// `copy`, so the compiler refused to store one at all; naming it there is what
+// makes this file worth checking, because a wrong answer in the other direction
+// would either leak a buffer per call or free one the source still owns.
+//
+// Three shapes, because each is a separate list: a plain `u8[]` buffer, a
+// `string`, and a `string[]`, whose elements are cloned as well.
+interface Bag {
+    readonly bytes: u8[];
+    readonly label: string;
+    readonly names: string[];
+}
+
+async function seven(): Promise<i32> {
+    return 7;
+}
+
+async function inspect(bag: Bag): Promise<i32> {
+    const bytes: u8[] = bag.bytes.copy();
+    const label: string = bag.label.copy();
+    const names: string[] = bag.names.copy();
+    const value: i32 = await seven();
+    return bytes.length as i32 + label.length as i32 + names.length as i32 + value;
+}
+
+async function main(): Promise<void> {
+    const bag: Bag = { bytes: [1, 2, 3], label: "hello", names: ["alpha", "beta"] };
+    let total: i32 = 0;
+    let round: i32 = 0;
+    while (round < 200) {
+        const round_total: i32 = await inspect(bag);
+        total = total + round_total;
+        round = round + 1;
+    }
+    console.log(total);
+    console.log("assert:", 3400);
+    // The source outlived every clone: a frame that freed what it aliased
+    // would have released this before the first iteration ended.
+    console.log(bag.names[0]);
+    console.log("assert:", "alpha");
+}

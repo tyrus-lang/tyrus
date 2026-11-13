@@ -1,0 +1,28 @@
+// `Promise.resolve` moves its payload into a heap box the promise owns, and the
+// drop function it installs is what releases it. A `string` is cloned first, so
+// the original stays with whoever produced it, but every other payload is moved
+// in as it stands and the end-of-statement sweep still believed it owned the
+// original: `Promise.resolve<i32[]>([1, 2, 3])` had the sweep free the literal's
+// buffer while the promise still pointed at it, and awaiting the promise read
+// freed memory rather than the array. The move is now recorded, so the sweep
+// lets go and only the promise's drop function frees it.
+//
+// Expected output is 1000.
+const digits = (): Promise<i32[]> => {
+    return Promise.resolve<i32[]>([1, 2, 3]);
+};
+
+const label = (): Promise<string> => {
+    return Promise.resolve<string>("ab".toUpperCase());
+};
+
+const main = async (): Promise<void> => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const values: i32[] = await digits();
+        const text: string = await label();
+        total += values.length + text.length;
+    }
+    console.log(total);
+    console.log("assert:", 1000);
+};

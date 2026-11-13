@@ -1,0 +1,93 @@
+// A `?.` call allocates twice in its present branch: the value, and the box
+// holding the optional. Both used to leak, 8 bytes per iteration.
+//
+// The box is claimed on the *merged* value rather than where it is malloc'd.
+// Recording it inside the branch was the original blocker: the scope's release
+// runs after the branches rejoin, so a release recorded in the branch does not
+// dominate it, and the emitted IR was invalid.
+//
+// The box's plan is `Deep`, not the flat `Value` it started as: every
+// string-returning method reachable through `?.` genuinely allocates, so a box
+// this becomes the *sole* owner of, bound to a name, no `??` at all, has to
+// recurse into its payload when released, or that payload leaks forever.
+// `Deep` on a `Type::Optional` already does exactly that, null-checked, via
+// `emit_async_drop_value_in_place`'s own `Type::Optional` arm, the same glue a
+// plain scope-owned optional local already used.
+//
+// The `??` case is the one place that would be wrong: it hands the payload out
+// *by value*, cloned, so the merged result is independently owned, recursing
+// into the original there too would free memory the result still needs.
+// `emit_null_coalesce` accounts for this itself: it forgets this exact
+// registration and frees only the box's own header, bypassing the plan
+// entirely, once it has dealt with the payload on its own terms (cloning it,
+// and, for the one shape provable, `left` exactly an `OptionalMethodCall`,
+// discarding the original after the clone; `OptionalFieldAccess` does not get
+// this, since a struct field can hold a static string a literal was built
+// with, and freeing that unconditionally segfaulted before this was narrowed).
+//
+// A second, separate bug surfaced alongside: releasing the coalesce's own
+// merged result relies on `emit_async_cleanup_source_expression`, which only
+// frees a value when it recognizes the *shape* of the expression that produced
+// it. `BinOp::NullCoalesce` was not a shape it recognized, so a clone was
+// silently never freed, forgetting a pending registration only stops it being
+// tracked, it does not itself call `free`. Now recognized, mirroring the exact
+// condition the coalesce itself uses to decide whether its result is owned.
+//
+// A third: `OptionalFieldAccess` had never registered its own box's release at
+// all, unlike `OptionalMethodCall`, an 8-byte-per-iteration leak neither a
+// bound local nor a `??` could ever have claimed, found while wiring the two
+// fixes above. `Value`, not `Deep`, for the same static-field reason.
+//
+// The last, non-scaling residue, `const label: string? = "abc";`, boxed by
+// the shared `emit_optional_box` helper, which never registered its own
+// release, closed differently from the other three: not inside
+// `emit_optional_box`/`emit_expr_as` themselves (two attempts there each broke
+// a different IR snapshot test the same way the very first box-release attempt
+// in this file did, some callers, a numeric range check and a `&&=`/`||=`/
+// `??=` short-circuit assignment, use the box *inside* a branch a caller later
+// merges into a phi, and a release recorded pre-merge does not dominate a
+// later use of it), but at the one place proven safe regardless of what
+// branching happened *inside* `emit_expr_as`: the binding, right after it
+// returns a value. A callee's return always dominates its own call site, by
+// construction, so registering there needs no knowledge of the branches that
+// produced it. Narrowed to values whose own type is not already `Optional`
+// (excludes `OptionalMethodCall`/`OptionalFieldAccess`, which register
+// themselves, and a plain read of an existing binding, which is a borrow) and
+// to nothing else pending at that point, boxing an expression that itself
+// allocates and separately registers, `"a".toUpperCase()` coerced into
+// `string?`, hit a genuinely separate, pre-existing double-free in
+// `emit_async_cleanup_source_expression`'s own `Optional` handling (it frees an
+// unwrapped payload by matching the *expression's shape* rather than by
+// forgetting the original registration's SSA identity, so both fire).
+// Confirmed unrelated to anything above, it reproduces identically with this
+// fix's condition forced false, and left alone rather than folded in here.
+//
+// The shapes below exist because every fix above is only safe if it holds for
+// all of them: a temporary, a bound coalesce result, a bound-but-unconsumed
+// optional, an absent receiver taking the other branch, and a bare literal
+// binding with no `?.` in sight. Expected output is 1100.
+const absentLabel = (): string? => {
+    return;
+};
+
+const main = (): void => {
+    const label: string? = "abc";
+    const missing: string? = absentLabel();
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 100; i += 1) {
+        total += (label?.toUpperCase() ?? "x").length;
+
+        const bound: string = label?.toUpperCase() ?? "x";
+        total += bound.length;
+
+        const optional: string? = label?.toUpperCase();
+        total += optional?.length ?? 0;
+
+        total += (missing?.toUpperCase() ?? "yz").length;
+
+        const absent: string? = missing?.toUpperCase();
+        total += absent?.length ?? 0;
+    }
+    console.log(total);
+    console.log("assert:", 1100);
+};

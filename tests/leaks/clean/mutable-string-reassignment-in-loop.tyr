@@ -1,0 +1,108 @@
+// Reassigning a plain (synchronous, non-`async`) mutable `string` local from
+// an allocating expression, inside a loop, used to leak every value but the
+// last. Not specific to any one allocating expression, `.toUpperCase()`
+// here, but a template-literal interpolation or `+` concatenation
+// reproduce the identical shape, because the root cause was a
+// compile-time-only mechanism.
+//
+// `prepare_owned_native_assignment` (crates/tyrus-codegen/src/core.rs)
+// releases whatever a binding *statically* held before an `Assign`
+// overwrites it, by looking up `owned_native_vars[scope]` at the one point
+// in the AST where that `Assign` statement is compiled. For straight-line
+// code (`s = a(); s = b();`, two separate statements) that is exactly right:
+// by the time the second is compiled, the first has already registered its
+// plan. Inside a loop, the *same* `Assign` statement compiles exactly once,
+// so `prepare_owned_native_assignment` ran exactly once too, the
+// "previous" value it could ever see was whatever `s` held at compile time
+// (here, the static, never-owned `""` the declaration used), never what a
+// *prior runtime iteration* of the very same statement produced.
+//
+// Closed by giving a `let`-declared `string` its own runtime ownership bit
+// (`mutable_string_ownership`), mirroring the async `string_ownership`/
+// `replace_async_string_local` mechanism that already solves the identical
+// problem for a mutable string reassigned across suspensions: released and
+// rewritten on every reassignment, so the release decision follows the
+// value actually there at run time instead of the state of compilation.
+// `owned_native_vars`'s static plan is skipped entirely for a binding
+// tracked this way, the two are mutually exclusive per name, so nothing is
+// ever swept twice.
+//
+// Found chasing this, and closed in the same pass: `a + b` (string
+// concatenation via `BinOp::Add`) never registered its own fresh buffer as
+// owned at all, leaking on every use, reassigned in a loop or not. Closed
+// by claiming it at `emit_binop`'s own call site, the same way an
+// allocating string method already claims itself immediately after its own
+// low-level call.
+function pair(): [i32, string] {
+    return [1, "z"];
+}
+
+const main = (): void => {
+    // The reassignment-in-a-loop shape the leak was found in.
+    let s: string = "";
+    for (let i: i32 = 0; i < 200; i += 1) {
+        s = "x".toUpperCase();
+    }
+    console.log(s);
+
+    // `+` concatenation, both as a fresh `const` and reassigned in a loop.
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const concatenated: string = "start" + "!";
+        total += concatenated.length;
+    }
+    console.log(total);
+
+    let accumulated: string = "start";
+    for (let i: i32 = 0; i < 200; i += 1) {
+        accumulated = accumulated + "!";
+    }
+    console.log(accumulated.length);
+
+    // Reassigned from an owned value on one branch and a literal on the
+    // other, inside a loop, mixing an owned and a static source across
+    // iterations must still free only what was actually allocated.
+    let mixed: string = "";
+    for (let i: i32 = 0; i < 50; i += 1) {
+        if (i % 2 === 0) {
+            mixed = "y".toUpperCase();
+        } else {
+            mixed = "literal-branch";
+        }
+    }
+    console.log(mixed);
+
+    // An early `break` must not skip releasing what the loop already
+    // reassigned before it.
+    let broken: string = "";
+    for (let i: i32 = 0; i < 10; i += 1) {
+        if (i === 5) {
+            break;
+        }
+        broken = "w".toUpperCase();
+    }
+    console.log(broken);
+
+    // A `let` declared *inside* the loop body, reassigned differently per
+    // branch, redeclared fresh every iteration, the enclosing block's own
+    // scope exit (compiled once, executed every iteration) already frees
+    // it correctly without any special casing of its own.
+    for (let i: i32 = 0; i < 50; i += 1) {
+        let inner: string = "y".toUpperCase();
+        if (i % 2 === 0) {
+            inner = "z".toUpperCase();
+        } else {
+            inner = "literal-branch";
+        }
+        console.log(inner.length);
+    }
+
+    // Reassigned from a destructured tuple element, an owned `string`
+    // extracted, not a call's direct return.
+    let fromTuple: string = "";
+    for (let i: i32 = 0; i < 20; i += 1) {
+        const [_, message] = pair();
+        fromTuple = message.toUpperCase();
+    }
+    console.log(fromTuple);
+};

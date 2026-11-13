@@ -1,0 +1,31 @@
+// `Map`/`Set` built without type arguments own the same native table as the
+// spelled-out form, so the release has to be registered on every path that
+// supplies the types: the annotation, the entries, and a branch that has
+// neither to fall back on.
+export function main(): void {
+    let index: i32 = 0;
+
+    while (index < 200) {
+        const fromEntries = Map([["ada", "lovelace"], ["grace", "hopper"]]);
+        const fromAnnotation: Map<string, string> = Map();
+        const fromBranch = index % 2 === 0
+            ? Map([["even", "yes"]])
+            : Map([["odd", "yes"]]);
+        const elements: Set<string> = Set(["a", "b", "a"]);
+
+        fromAnnotation.set("linus", "torvalds");
+
+        if (index === 0) {
+            console.log(fromEntries.get("grace") ?? "missing");
+            console.log("assert:", "hopper");
+            console.log(fromAnnotation.size);
+            console.log("assert:", 1);
+            console.log(fromBranch.get("even") ?? "missing");
+            console.log("assert:", "yes");
+            console.log(elements.size);
+            console.log("assert:", 2);
+        }
+
+        index += 1;
+    }
+}

@@ -1,0 +1,44 @@
+async function caseLabel(label: string): Promise<string> {
+    return label;
+}
+
+async function selectBorrowed(subject: string): Promise<i32> {
+    switch (subject) {
+        case "sync": {
+            return 1;
+        }
+        case await caseLabel("FIRST"): {
+            return 2;
+        }
+        case await caseLabel("SECOND"): {
+            return 3;
+        }
+        default: {
+            return 0;
+        }
+    }
+}
+
+async function selectOwned(subject: string): Promise<i32> {
+    switch (subject.toUpperCase()) {
+        case await caseLabel("FIRST"): {
+            return 2;
+        }
+        default: {
+            return 0;
+        }
+    }
+}
+
+async function main(): Promise<void> {
+    let total: i32 = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const built: string = `${"second"}-${index}`.slice(0, 6).toUpperCase();
+        const borrowed: i32 = await selectBorrowed(built);
+        const literal: i32 = await selectBorrowed("sync");
+        const missing: i32 = await selectBorrowed("missing");
+        const owned: i32 = await selectOwned("first");
+        total += borrowed + literal + missing + owned;
+    }
+    print(total); // 1200
+}

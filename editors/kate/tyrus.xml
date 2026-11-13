@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language SYSTEM "https://raw.githubusercontent.com/KDE/syntax-highlighting/master/data/syntax.dtd">
+<language name="Tyrus" version="1.0" kateversion="5.79" section="Sources" extensions="*.tyr" case-insensitive="false" highlightSpaces="\S" highlightTrailingSpaces="true" highlightAnchorDelimiter="">
+
+  <keywords>
+    <item> Infinity </item>
+    <item> NaN </item>
+    <item> None </item>
+    <item> abstract </item>
+    <item> and </item>
+    <item> as </item>
+    <item> asserts </item>
+    <item> async </item>
+    <item> at </item>
+    <item> await </item>
+    <item> boolean </item>
+    <item> break </item>
+    <item> case </item>
+    <item> catch </item>
+    <item> char </item>
+    <item> class </item>
+    <item> comptime </item>
+    <item> const </item>
+    <item> constructor </item>
+    <item> continue </item>
+    <item> debugger </item>
+    <item> decimal </item>
+    <item> declare </item>
+    <item> default </item>
+    <item> defer </item>
+    <item> delete </item>
+    <item> do </item>
+    <item> else </item>
+    <item> enum </item>
+    <item> errdefer </item>
+    <item> export </item>
+    <item> extends </item>
+    <item> f128 </item>
+    <item> f32 </item>
+    <item> f64 </item>
+    <item> false </item>
+    <item> finally </item>
+    <item> for </item>
+    <item> from </item>
+    <item> function </item>
+    <item> get </item>
+    <item> i128 </item>
+    <item> i16 </item>
+    <item> i32 </item>
+    <item> i64 </item>
+    <item> i8 </item>
+    <item> if </item>
+    <item> implements </item>
+    <item> import </item>
+    <item> in </item>
+    <item> infer </item>
+    <item> instanceof </item>
+    <item> interface </item>
+    <item> intrinsic </item>
+    <item> is </item>
+    <item> isize </item>
+    <item> keyof </item>
+    <item> let </item>
+    <item> loop </item>
+    <item> match </item>
+    <item> module </item>
+    <item> namespace </item>
+    <item> never </item>
+    <item> new </item>
+    <item> not </item>
+    <item> null </item>
+    <item> of </item>
+    <item> onfail </item>
+    <item> or </item>
+    <item> out </item>
+    <item> override </item>
+    <item> package </item>
+    <item> private </item>
+    <item> protect </item>
+    <item> protected </item>
+    <item> public </item>
+    <item> readonly </item>
+    <item> require </item>
+    <item> return </item>
+    <item> satisfies </item>
+    <item> set </item>
+    <item> static </item>
+    <item> string </item>
+    <item> super </item>
+    <item> switch </item>
+    <item> this </item>
+    <item> throw </item>
+    <item> throws </item>
+    <item> true </item>
+    <item> try </item>
+    <item> type </item>
+    <item> typeof </item>
+    <item> u128 </item>
+    <item> u16 </item>
+    <item> u32 </item>
+    <item> u64 </item>
+    <item> u8 </item>
+    <item> unique </item>
+    <item> unknown </item>
+    <item> usize </item>
+    <item> validator </item>
+    <item> var </item>
+    <item> void </item>
+    <item> when </item>
+    <item> while </item>
+    <item> with </item>
+    <item> yield </item>
+  </keywords>
+
+  <context name="Detect" attribute="Normal" lineEndContext="#Stay">
+    <DetectChar char="'" context="CharLiteral"/>
+    <DetectChar char="&quot;" context="StringLiteral"/>
+    <DetectChar char="/" context="PotentialCommentOrRegex"/>
+    <Detect2Chars char="#" char2="!" context="Shebang" firstNonSpace="true"/>
+    <StringDetect String="//" context="SingleLineComment" toEndOfLine="true"/>
+    <StringDetect String="/*" context="MultiLineComment"/>
+    <keywordString String="@validate @min @max @pattern @length @range @custom" context="Decorator" attribute="Decorator"/>
+    <DetectIdentifier context="Identifier"/>
+    <DetectChar char="0" context="Number" column="0"/>
+    <Int regex="[0-9]" context="Number" attribute="Float"/>
+    <DetectChar char="%" context="Topic" attribute="Special"/>
+  </context>
+
+  <context name="Identifier" attribute="Normal" lineEndContext="#Pop">
+    <DetectIdentifier/>
+    <keyword attribute="Keyword" context="#Pop" weak="true"/>
+    <DetectChar char="(" context="#Pop" attribute="Normal"/>
+    <DetectChar char=":" context="#Pop" attribute="Normal"/>
+    <DetectChar char="=" context="#Pop" attribute="Normal"/>
+  </context>
+
+  <context name="SingleLineComment" attribute="Comment" lineEndContext="#Pop" transparent="true">
+    <DetectChar char="\n" context="#Pop"/>
+  </context>
+
+  <context name="MultiLineComment" attribute="Comment" lineEndContext="#Stay">
+    <DetectChar char="*" context="MultiLineCommentEnd"/>
+  </context>
+
+  <context name="MultiLineCommentEnd" attribute="Comment" lineEndContext="#Stay">
+    <DetectChar char="/" context="#Pop"/>
+    <DetectChar char="*" context="MultiLineCommentEnd"/>
+    <DetectNone char="" context="#Pop"/>
+  </context>
+
+  <context name="PotentialCommentOrRegex" attribute="Normal" lineEndContext="#Pop" fallthrough="true" fallthroughContext="Regex">
+    <DetectChar char="/" context="SingleLineComment"/>
+    <DetectChar char="*" context="MultiLineComment"/>
+  </context>
+
+  <context name="Regex" attribute="String" lineEndContext="#Pop">
+    <HlCStringChar char="\""/>
+    <DetectChar char="/" context="#Pop"/>
+  </context>
+
+  <context name="StringLiteral" attribute="String" lineEndContext="#Pop">
+    <HlCStringChar char="\""/>
+  </context>
+
+  <context name="CharLiteral" attribute="Char" lineEndContext="#Pop">
+    <HlCStringChar char="\""/>
+    <DetectChar char="'" context="#Pop"/>
+  </context>
+
+  <context name="Number" attribute="Float" lineEndContext="#Pop">
+    <Int regex="[0-9]" attribute="Float"/>
+    <DetectChar char="." context="NumberDot"/>
+    <StringDetect String="x" context="HexNumber" attribute="BaseN"/>
+    <StringDetect String="b" context="BinNumber" attribute="BaseN"/>
+    <StringDetect String="o" context="OctNumber" attribute="BaseN"/>
+    <DetectChar char="e" context="Exponent" attribute="Float"/>
+    <DetectChar char="E" context="Exponent" attribute="Float"/>
+    <DetectChar char="_" context="#Stay" attribute="Float"/>
+    <keywordString String="boolean char decimal f128 f32 f64 i128 i16 i32 i64 i8 isize never string u128 u16 u32 u64 u8 unknown usize void" context="#Pop" attribute="Type" weak="true"/>
+  </context>
+
+  <context name="NumberDot" attribute="Float" lineEndContext="#Pop">
+    <Int regex="[0-9]" attribute="Float"/>
+    <DetectChar char="e" context="Exponent" attribute="Float"/>
+    <DetectChar char="E" context="Exponent" attribute="Float"/>
+    <keywordString String="f32 f64 f128" context="#Pop" attribute="Type" weak="true"/>
+  </context>
+
+  <context name="HexNumber" attribute="BaseN" lineEndContext="#Pop">
+    <DetectChar regex="[0-9a-fA-F]" context="#Stay" attribute="BaseN"/>
+    <DetectChar char="_" context="#Stay" attribute="BaseN"/>
+    <keywordString String="u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize f32 f64 f128" context="#Pop" attribute="Type" weak="true"/>
+  </context>
+
+  <context name="BinNumber" attribute="BaseN" lineEndContext="#Pop">
+    <DetectChar regex="[01]" context="#Stay" attribute="BaseN"/>
+    <DetectChar char="_" context="#Stay" attribute="BaseN"/>
+    <keywordString String="u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize" context="#Pop" attribute="Type" weak="true"/>
+  </context>
+
+  <context name="OctNumber" attribute="BaseN" lineEndContext="#Pop">
+    <DetectChar regex="[0-7]" context="#Stay" attribute="BaseN"/>
+    <DetectChar char="_" context="#Stay" attribute="BaseN"/>
+    <keywordString String="u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize" context="#Pop" attribute="Type" weak="true"/>
+  </context>
+
+  <context name="Exponent" attribute="Float" lineEndContext="#Pop">
+    <DetectChar regex="[0-9]" context="#Stay" attribute="Float"/>
+    <DetectChar char="+" context="#Stay" attribute="Float"/>
+    <DetectChar char="-" context="#Stay" attribute="Float"/>
+    <DetectChar char="_" context="#Stay" attribute="Float"/>
+    <keywordString String="f32 f64 f128" context="#Pop" attribute="Type" weak="true"/>
+  </context>
+
+  <context name="Shebang" attribute="Comment" lineEndContext="#Pop">
+    <DetectChar char="\n" context="#Pop"/>
+  </context>
+
+  <context name="Decorator" attribute="Decorator" lineEndContext="#Pop">
+    <DetectIdentifier/>
+    <DetectChar char="(" context="#Pop"/>
+  </context>
+
+  <context name="Topic" attribute="Special" lineEndContext="#Pop"/>
+
+</language>

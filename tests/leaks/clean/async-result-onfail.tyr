@@ -1,0 +1,67 @@
+// `onfail` over an awaited `Result`: the handler binds the `Err` and the
+// success is a copy of the hidden frame local that keeps the settled value,
+// through implicit propagation, a `void` exit, an expression handler, an
+// annotated binding and a handler that continues a loop.
+import { sleepAsync } from "tyrus:task";
+
+interface Failure {
+    code: string;
+}
+
+const load = async (ok: boolean): Promise<Result<string[], Failure>> => {
+    await sleepAsync(1);
+    if (ok) {
+        const names: string[] = [`red ${1}`, "blue"];
+        return Ok(names);
+    }
+    const failure: Failure = { code: `E${2}` };
+    return Err(failure);
+};
+
+const propagate = async (ok: boolean): Promise<Result<usize, Failure>> => {
+    const names = await load(ok) onfail {
+        print("propagating", names.code);
+    };
+    await sleepAsync(1);
+    return Ok(names.length);
+};
+
+const explicit = async (ok: boolean): Promise<Result<string, Failure>> => {
+    const names: string[] = await load(ok) onfail {
+        return Err(names);
+    };
+    await sleepAsync(1);
+    return Ok(names[0]);
+};
+
+const quiet = async (ok: boolean): Promise<void> => {
+    const names = await load(ok) onfail print("quiet", names.code);
+    await sleepAsync(1);
+    print("quiet ok", names[0]);
+};
+
+const looped = async (): Promise<void> => {
+    for (let round = 0; round < 4; round += 1) {
+        const names = await load(round % 2 === 0) onfail {
+            print("loop failed", names.code);
+            continue;
+        };
+        print("loop", names.length);
+    }
+};
+
+const main = async (): Promise<void> => {
+    for (let round = 0; round < 6; round += 1) {
+        const ok = round % 2 === 0;
+        match (await propagate(ok)) {
+            Ok(count) => { print("count", count); }
+            Err(failure) => { print("err", failure.code); }
+        }
+        match (await explicit(ok)) {
+            Ok(first) => { print("first", first); }
+            Err(failure) => { print("err", failure.code); }
+        }
+        await quiet(ok);
+    }
+    await looped();
+};

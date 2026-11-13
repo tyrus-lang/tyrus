@@ -1,0 +1,33 @@
+// An array literal handed straight to a callee that takes its buffer.
+//
+// This case exists to guard a double free, not to track its own leak. Claiming
+// the buffer of a literal whose elements are not allocations looks obviously
+// right (the buffer *is* an allocation and nobody frees it) and doing so
+// aborted every example in the integration suite, because `Promise.all` frees that
+// buffer itself. Fifteen category cases all reported zero errors; none of them
+// passed a literal to anything. So: a buffer that escapes into a callee
+// belongs to the callee, and any future rule claiming array literals more
+// aggressively has to keep this free of invalid frees. `scripts/leak-check`
+// fails on corruption as well as on bytes lost, in `known/` too, where leaking
+// is allowed and corrupting is not, which is why this stayed there even after
+// the double free was fixed.
+//
+// It moved here once the ~8 bytes per iteration it also carried, in the
+// promise machinery, not the buffer this case is about, stopped appearing.
+// That looks like a side effect of reference-counting closure environments
+// (`closure-reference-counted`), which this case never set out to test, so it
+// is confirmed by measurement rather than by tracing the exact call site.
+//
+// Expected output is 600.
+const main = async (): Promise<void> => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const values: i32[] = await Promise.all<i32>([
+            Promise.resolve(1),
+            Promise.resolve(2),
+        ]);
+        total += values[0] + values[1];
+    }
+    console.log(total);
+    console.log("assert:", 600);
+};

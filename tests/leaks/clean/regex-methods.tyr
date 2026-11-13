@@ -1,0 +1,66 @@
+// Every allocating `Regex`/`String` regex method leaked unconditionally:
+// `.exec()`/`.match()` box a fresh `string[]?`, `.execAll()`/`.matchAll()`
+// build a fresh `string[][]`, `.toString()`/`.source`/`.flags` on a runtime
+// (non-literal) pattern build a fresh `string`, and dynamic construction built
+// its own fresh `/pattern/flags` string, none of these were registered
+// anywhere, in either the `Regex` method dispatch or the parallel
+// `String.prototype` one (`.match()`/`.matchAll()` share the same runtime
+// calls through a second, independent codegen path).
+//
+// This battery also caught a genuine, self-introduced crash while it was
+// being written: `ReleasePlan::Box` (used to release a boxed `Optional`, as
+// `.exec()`/`.execAll()`/`.match()` return) unconditionally loaded through
+// and freed the box pointer, with no check for the "no match" case, which is
+// represented as a null pointer rather than an empty allocation. The very
+// first unbound, non-matching `.exec()` call below reliably segfaulted
+// until the release plan gained a null check and skips the load/free
+// entirely for an absent box.
+//
+// Expected output is 21200.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const pattern: Regex = /^([a-z]+)@([a-z]+)\.([a-z]{2,})$/;
+        const result: string[]? = pattern.exec("hello@example.com");
+        if (result) {
+            total += result[0].length + result[1].length + result[2].length + result[3].length;
+        }
+
+        // Unbound temporary: never named, swept at end of scope.
+        pattern.exec("nope");
+
+        const matchResult: string[]? = "hello@example.com".match(/^([a-z]+)@([a-z]+)\.([a-z]{2,})$/);
+        if (matchResult) {
+            total += matchResult[0].length;
+        }
+
+        const simplePattern: Regex = /\w+/;
+        const simpleResult: string[][]? = simplePattern.execAll("hello world");
+        if (simpleResult) {
+            total += simpleResult.length;
+            total += simpleResult[0][0].length + simpleResult[1][0].length;
+        }
+
+        const allMatches: string[][] = "hello world".matchAll(/\w+/);
+        total += allMatches.length;
+
+        const slug: string = /^[a-z0-9-]+$/.toString();
+        total += slug.length;
+
+        // Dynamic construction from a runtime pattern used to sit here.
+        // The language dropped it along with the `new` keyword, which is now
+        // reserved for a future feature, so a regex comes only from a literal.
+        // `source`/`flags`/`toString` are still exercised, on a literal.
+        const dynamicPattern: Regex = /^[a-z0-9-]+$/i;
+        total += dynamicPattern.source.length + dynamicPattern.flags.length;
+        total += dynamicPattern.toString().length;
+
+        // Rebind, which is what made the old dynamic case interesting: the
+        // previous value has to be released before the new one lands.
+        let rebound: Regex = /a/i;
+        rebound = /b/i;
+        total += rebound.source.length;
+    }
+    console.log(total);
+    console.log("assert:", 21200);
+};

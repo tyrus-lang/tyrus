@@ -1,0 +1,24 @@
+// A `const` string read from a field inside an async function is stored in the
+// frame as a clone, and the frame releases that clone; the object keeps its own.
+import { sleepAsync } from "tyrus:task";
+
+interface User {
+    name: string;
+    tags: string[];
+}
+
+const run = async (user: User): Promise<string> => {
+    const name = user.name;
+    const first = user.tags[0];
+    await sleepAsync(1);
+    print(name, first);
+    return name;
+};
+
+const main = async (): Promise<void> => {
+    for (let round = 0; round < 20; round += 1) {
+        const user: User = { name: `Ada ${round}`, tags: [`t${round}`, "x"] };
+        const back = await run(user);
+        print(back, user.name);
+    }
+};

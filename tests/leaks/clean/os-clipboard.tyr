@@ -1,0 +1,21 @@
+// `clipboardWrite`/`clipboardRead` follow the same owned-string patterns
+// already covered elsewhere in this module (`clipboardRead` boxes its
+// `string?` the way `whoami()` does). Absence is treated as valid here too,
+// on Linux under X11, reading back a value immediately after writing it, in
+// the same process, can transiently see it as absent while the clipboard's
+// ownership handoff to a background process is still in flight, so this
+// loop does not assert the read reflects the write.
+import { clipboardRead, clipboardWrite } from "tyrus:os";
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        clipboardWrite("tyrus leak test");
+        const value: string? = clipboardRead();
+        if (value) {
+            total += value.length;
+        }
+    }
+    console.log(total >= 0);
+    console.log("assert:", true);
+};

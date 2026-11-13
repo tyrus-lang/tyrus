@@ -1,0 +1,80 @@
+// A request that misses its clock used to leak the Promise its handler
+// returned, and closing that leak uncovered a dangling pointer underneath it.
+//
+// `invoke` releases that Promise on each of the three ways it can finish, and
+// all three are written after the `await` that waits for the handler to settle.
+// A `requestTimeout` wraps the whole call in a timeout, and when that fires the
+// future is dropped at exactly that await, so none of the three ran. The
+// reference is held in a guard now, which a drop reaches either way.
+//
+// Releasing it properly then crashed: the `spawn_blocking` task that sits in
+// `wait_until_settled` held the Promise as a bare address with no reference of
+// its own, and that task is not cancelled when the future awaiting it is
+// dropped. The leak had been keeping the allocation alive for it. It takes its
+// own reference now, alongside the one it already took on the response slot,
+// which is the same reasoning that slot's reference was already documented
+// with.
+//
+// What this file measures is worth stating plainly, because it is less than it
+// looks. It does not catch either half. The bytes stay reachable through the
+// executor's task in a generated program, so LeakSanitizer does not count them,
+// and the case passes with the guard removed; the use-after-free is a race
+// between the timeout and the blocking task, and one run of one program loses
+// that race only sometimes, so it passes with the second reference removed too.
+// Both were caught elsewhere: the leak by the runtime's own unit tests, which
+// drive `invoke` with a fixture handler owning nothing else, and the crash by
+// running this program directly under AddressSanitizer, repeatedly.
+//
+// It earns its place as behaviour rather than as measurement: it is the only
+// program in the corpus that takes a request timeout end to end, so a change
+// that stops timing out, or starts answering the wrong thing, fails here.
+import { createRouter, fetch, HttpError, HttpReply, HttpRouter, HttpServer, HttpStatus, ServerOptions, TextBody } from "tyrus:http";
+import { sleepAsync } from "tyrus:task";
+
+async function requestOnce(url: string): Promise<i32> {
+    try {
+        const response = await fetch.get(url);
+        const timedOut: boolean = response.status() === 503 || response.status() === 504;
+        response.close();
+        return timedOut ? 1 : 0;
+    } catch (error: HttpError) {
+        // A connection cut by the timeout counts as the same outcome: what this
+        // measures is the memory, and the request not completing is the point.
+        return 1;
+    }
+}
+
+/// A loop of its own, because a loop that awaits cannot sit inside a `try`.
+async function repeatRequests(url: string): Promise<i32> {
+    let timedOut: i32 = 0;
+    for (let index: i32 = 0; index < 10; index += 1) {
+        const one: i32 = await requestOnce(url);
+        timedOut += one;
+    }
+    return timedOut;
+}
+
+const main = async (): Promise<void> => {
+    const app: HttpRouter = createRouter();
+    app.get("/slow", {
+        response: { 200: TextBody },
+        // Asynchronous on purpose: the Promise that leaked is the one an async
+        // handler returns, and a synchronous handler never gives `invoke` an
+        // await for the timeout to drop it at.
+        handler: async (request, reply): Promise<void> => {
+            // Longer than the clock below, so every request misses it.
+            await sleepAsync(60);
+            reply.status(HttpStatus.Ok).send("late");
+        },
+    });
+    let timedOut: i32 = 0;
+    const server = app.listen(0, { host: "127.0.0.1", requestTimeout: "10ms" }) onfail {
+        console.log(`the server did not start: ${server.code}`);
+        return;
+    };
+        const url: string = `http://127.0.0.1:${server.port()}/slow`;
+        timedOut = await repeatRequests(url);
+        await server.close();
+    console.log(timedOut);
+    console.log("assert:", 10);
+};

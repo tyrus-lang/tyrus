@@ -1,0 +1,191 @@
+{
+  "name": "tyrus",
+  "displayName": "Tyrus",
+  "description": "Language Server integration, syntax highlighting, diagnostics, navigation, and IntelliSense for Tyrus.",
+  "version": "0.1.1",
+  "publisher": "tyrus-lang",
+  "icon": "images/tyrus-logo.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tyrus-lang/tyrus.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Linters"
+  ],
+  "keywords": [
+    "tyrus",
+    "language",
+    "language-server",
+    "lsp"
+  ],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "check": "tsc --noEmit && node scripts/check-tyrus-fmt-schema.mjs && node scripts/check-tyrus-lint-schema.mjs && node scripts/check-grammar.mjs && node scripts/check-codelens-workspace-edit.mjs",
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --minify --tree-shaking=true --legal-comments=none --outfile=dist/extension.js",
+    "watch": "npm run build -- --watch",
+    "package": "npm run check && npm run build && vsce package --no-dependencies"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "tyrus.restartLanguageServer",
+        "title": "Tyrus: Restart Language Server"
+      }
+    ],
+    "languages": [
+      {
+        "id": "tyrus",
+        "aliases": [
+          "tyrus",
+          "TYRUS",
+          "tyr",
+          "TYR"
+        ],
+        "extensions": [
+          ".tyr"
+        ],
+        "icon": {
+          "light": "./images/tyrus-file.png",
+          "dark": "./images/tyrus-file.png"
+        },
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "tyrus-env",
+        "aliases": [
+          "tyrus .env"
+        ],
+        "filenames": [
+          ".env"
+        ],
+        "filenamePatterns": [
+          ".env.*"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "tyrus",
+        "scopeName": "source.tyr",
+        "path": "./syntaxes/tyrus.tmLanguage.json"
+      },
+      {
+        "language": "tyrus-env",
+        "scopeName": "source.tyr-env",
+        "path": "./syntaxes/tyrus-env.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Tyrus",
+      "properties": {
+        "tyrus.server.path": {
+          "type": "string",
+          "default": "tyrus",
+          "scope": "machine",
+          "description": "Path to the tyrus executable used to start `tyrus lsp`."
+        },
+        "tyrus.format.enable": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable/disable the tyrus formatter. When enabled, the extension registers a DocumentFormattingEditProvider for .tyr files."
+        },
+        "tyrus.diagnostics.highlightWholeLine": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Highlight the full line behind errors and warnings while preserving the editor's diagnostic underline."
+        },
+        "tyrus.codeLens.quickFixes.enable": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Enable/disable Quick Fix code lenses above lines with diagnostics. Takes effect after reloading the window."
+        },
+        "tyrus.workspace.maxFiles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 10000,
+          "scope": "resource",
+          "description": "Maximum number of Tyr files indexed by workspace-wide language features."
+        },
+        "tyrus.workspace.maxDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "default": 64,
+          "scope": "resource",
+          "description": "Maximum directory depth scanned for Tyr files."
+        },
+        "tyrus.workspace.excludeDirectories": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 128},
+          "default": [],
+          "scope": "resource",
+          "description": "Additional directory names to skip during workspace file discovery. Built-in exclusions always remain active."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[tyrus]": {
+        "editor.defaultFormatter": "tyrus-lang.tyrus",
+        "editor.formatOnSave": true
+      }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "tyrus.json",
+        "url": "./schemas/tyrus.schema.json"
+      },
+      {
+        "fileMatch": "tyrus-fmt.json",
+        "url": "./schemas/tyrus-fmt.schema.json"
+      },
+      {
+        "fileMatch": "tyrus-lint.json",
+        "url": "./schemas/tyrus-lint.schema.json"
+      }
+    ],
+    "semanticTokenTypes": [
+      {
+        "id": "parameter",
+        "superType": "variable",
+        "description": "Function parameter used in body"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "tyrus",
+        "scopes": {
+          "parameter": [
+            "variable.parameter.tyr"
+          ],
+          "keyword": [
+            "keyword.other.reserved.tyr"
+          ]
+        }
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/vscode": "1.91.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.9.3",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
+  }
+}

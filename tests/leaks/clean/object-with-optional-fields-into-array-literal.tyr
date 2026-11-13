@@ -1,0 +1,28 @@
+// An object holding optional fields, stored by value into an array literal, was
+// freed twice. The local owns the boxes its own literal allocated; storing it
+// into the element is a shallow copy, so the element carries the same pointers,
+// and the array claims the element as fully owned and frees it through the
+// type-driven drop glue. Both owners ran at scope exit.
+//
+// The array literal claimed the element by asking only *whether* it was owned,
+// discarding the plan that said it owned the box and not its contents. Honoring
+// that plan is what makes the two releases disjoint.
+interface Options {
+    path?: string;
+    secure?: boolean;
+}
+
+interface Cookie {
+    name: string;
+    options?: Options;
+}
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const options: Options = { path: "/", secure: true };
+        const cookies: Cookie[] = [{ name: "theme", options: options }];
+        total += cookies.length;
+    }
+    console.log(total);
+};

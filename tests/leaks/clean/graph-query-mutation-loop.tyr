@@ -1,0 +1,43 @@
+// Graph query/mutation/display lifecycle in a 200-iteration loop with string
+// nodes: nodes()/neighbors() hand out owned tuple/string arrays (each element a
+// freshly allocated C string), reverse() clones the whole graph into a fresh
+// handle, and toDot()/toString() return heap C strings. removeEdge/removeNode
+// mutate in place. Covers a bound result, an unbound temporary, and the graph
+// handle, all released exactly once.
+import { Graph } from "tyrus:algorithm";
+
+const main = (): void => {
+    let total: i32 = 0;
+    let count: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const g = Graph<string, i32>();
+        g.addNode("a");
+        g.addNode("b");
+        g.addNode("c");
+        g.addEdge("a", "b", 1);
+        g.addEdge("b", "c", 2);
+        g.addEdge("a", "c", 3);
+        const nodes = g.nodes();
+        count += nodes.length;
+        total += nodes[0].length as i32;
+        const nb = g.neighbors("a");
+        count += nb.length;
+        total += nb[0].length as i32;
+        const rev = g.reverse();
+        count += rev.edgeCount();
+        total += rev.edge("c", "a") ?? 0;
+        count += g.toDot().length > 0 ? 1 : 0;
+        count += g.toString().length > 0 ? 1 : 0;
+        g.removeEdge("a", "b");
+        g.removeNode("b");
+        count += g.nodeCount();
+        count += g.edgeCount();
+        count += g.edges().length;
+        const scaled = g.mapEdges((w: i32): i32 => w * 2);
+        count += scaled.nodeCount();
+    }
+    console.log(total);
+    console.log("assert:", 1000);
+    console.log(count);
+    console.log("assert:", 3200);
+};

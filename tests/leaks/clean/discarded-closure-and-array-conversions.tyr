@@ -1,0 +1,71 @@
+// Three independent, always-reproducing leaks found running the full
+// examples aggregator under valgrind, unrelated to each other beyond all
+// three being missing registrations for a value nothing else claims.
+//
+// `buildGreeter("TitenQ");` as a bare statement, a call returning a fresh
+// closure, discarded outright, held the one reference its construction
+// handed over with nobody to release it, leaking the whole environment
+// (and, indirectly, every non-`Copy` capture inside it). `VarDecl` already
+// retains or skips a retain for this exact set of "fresh" shapes (a call, an
+// arrow-function literal) when binding a closure to a name; discarding it as
+// a bare statement needs the opposite, release the reference immediately,
+// since nothing else will ever own it. Closed in
+// `emit_expr_for_side_effects`'s catch-all arm: a `Function`-typed statement
+// expression whose shape is one of those "fresh" ones now emits the value
+// and releases it via `emit_closure_release`, instead of just evaluating it
+// for a side effect that was never there.
+//
+// A `[T; N]` tuple materialized into a `T[]` array, `return local;` from a
+// function declared to return `T[]`, or `let filled: T[] = someTuple;`, is
+// built fresh by `materialize_tuple_as_array` (a `tyrus_array_slice` call
+// over the tuple's own stack slot) and was returned completely unclaimed.
+// Closed by registering the result at its own construction site, the same
+// place any other allocating array-producing call already claims itself;
+// this alone accounts for two of the four record categories this file
+// guards (a bare function return, and a direct assignment from a tuple).
+//
+// `array.flatMap(callback)` leaked its callback's own return value on every
+// call: the callback returns a fresh array once per source element, and
+// `emit_flattened_value` copies each of its elements into the accumulated
+// result by value (correct) but never freed the now-empty source array's
+// own buffer afterward. Fixed at `flatMap`'s own call site specifically, not
+// inside the shared `emit_flattened_value` helper: that helper is also used
+// by `.flat()`'s recursive descent into an array that is an *element of the
+// receiver* (still owned by it), where freeing it would double-free the
+// receiver's own later cleanup. Only `flatMap`'s per-call callback result has
+// no other owner.
+//
+// Expected output is 126.
+const buildGreeter = (name: string): () => void => {
+    return (): void => {
+        console.log(name);
+    };
+};
+
+const arrayFromALocalTuple = (): i32[] => {
+    const local: [i32, i32, i32] = [10, 20, 30];
+    return local;
+};
+
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 3; i += 1) {
+        buildGreeter("TitenQ");
+
+        const copied: i32[] = arrayFromALocalTuple();
+        total += copied[2] as usize;
+
+        const point: [i32, i32, i32] = [1, 2, 3];
+        let filled: i32[] = point;
+        filled.push(40);
+        total += filled.length;
+
+        const values: i32[] = [1, 2, 3, 4];
+        const expanded: i32[] = values.flatMap((value: i32): i32[] => {
+            return [value, value * 10];
+        });
+        total += expanded.length;
+    }
+    console.log(total);
+    console.log("assert:", 126);
+};

@@ -1,0 +1,22 @@
+// `_` in an array/tuple destructure position (`const [a, _] = pair;`)
+// discards the element under a synthesized name (`__tyrus_discard_N`), but
+// the value is still extracted, stored, and released like any other local
+// when the scope exits, an owned value at a discarded slot is never leaked.
+function pair(): [i32, string] {
+    return [42, "erro"];
+}
+
+const main = (): void => {
+    let total: i32 = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const [code, _] = pair();
+        total += code;
+
+        const [_, message] = pair();
+        total += (message.length as i32);
+
+        const [_, _] = pair();
+        total += 1;
+    }
+    console.log(total);
+};

@@ -1,0 +1,59 @@
+// `pop`/`shift` on a `string[]` leaked the removed element, 2 B per removal,
+// once the array started owning its elements. Closed by normalizing the
+// receiver before the removal, which makes the transfer unconditional.
+//
+// The leak arrived as the residue of `string-array-grown-by-push`: an element
+// handed out of an array that owns its contents is an allocation someone must
+// release, where before it was a `.rodata` pointer nobody had to.
+//
+// Two attempts to claim it at the *call site* were each measured as corruption
+// rather than a leak and reverted, `tyrus_array_pop`/`tyrus_array_shift` do
+// not return the element, they `malloc` a box, copy the element into it, and
+// return the box, which the codegen already frees. Registering the result under
+// `ReleasePlan::Value` freed that box a second time (1 invalid free per
+// removal); registering it under the `Optional` drop glue did the same and also
+// tripped the `??` path (up to 3). Both zeroed the leak and left the program
+// producing no output at all.
+//
+// The working fix is at the release site that already exists: `methods.rs`
+// decides between `Deep` (free the box and the element inside it) and `Value`
+// (free the box alone) by asking whether the receiver's elements are proven
+// allocations. That question used to be answered by the receiver's registered
+// `ReleasePlan`, which a mode-tracked `string[]` no longer has, so the same
+// proof now also comes from `string_array_ownership`, and it is stronger there:
+// a removal normalizes the receiver to mode `2` first, so by the time the plan
+// is chosen there is no static-element case left to guard against. That is why
+// no runtime condition is needed here even though the mode is a runtime value.
+//
+// Covers both receivers the original crash distinguished: a pure literal, whose
+// elements are static until the normalization clones them, and one built from
+// computed strings, whose elements were allocations from the start.
+//
+// Every removed value is read through `?? ""` directly into the running total,
+// deliberately not through an `if ((x ?? "").length > N)` guard: that shape
+// leaks 4 B per iteration on its own, confirmed with a plain `string?`-returning
+// function and no array involved at all, a real, separate, pre-existing bug in
+// how the `??`/`if` condition pair releases its temporary, out of scope here.
+//
+// Expected output is 4090: `"alpha"` plus `"beta"` is 9 per iteration, popping
+// `"TAIL"` adds a constant 4, and the shifted `"item-N"` adds 6 bytes for the
+// first ten iterations, 7 for the next ninety and 8 for the last hundred.
+const main = (): void => {
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        let literal: string[] = ["alpha", "beta"];
+        const poppedLiteral: string? = literal.pop();
+        const shiftedLiteral: string? = literal.shift();
+
+        let computed: string[] = [];
+        computed.push("item-" + i.toString());
+        computed.push("tail".toUpperCase());
+        const poppedComputed: string? = computed.pop();
+        const shiftedComputed: string? = computed.shift();
+
+        total += (poppedLiteral ?? "").length + (shiftedLiteral ?? "").length;
+        total += (poppedComputed ?? "").length + (shiftedComputed ?? "").length;
+    }
+    console.log(total);
+    console.log("assert:", 4090);
+};

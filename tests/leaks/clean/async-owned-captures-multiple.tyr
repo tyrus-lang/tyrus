@@ -1,0 +1,26 @@
+// Independent async closure environments must release owned captures once.
+async function pause(): Promise<void> {
+    return;
+}
+
+const main = async (): Promise<void> => {
+    let total: usize = 0;
+    for (let index: i32 = 0; index < 200; index += 1) {
+        const firstPrefix: string = "first".toUpperCase();
+        const secondPrefix: string = "second".toUpperCase();
+        const first = async (suffix: string): Promise<string> => {
+            await pause();
+            return firstPrefix + suffix;
+        };
+        const second = async (suffix: string): Promise<string> => {
+            await pause();
+            return secondPrefix + suffix;
+        };
+        const firstResult: string = await first("!");
+        const secondResult: string = await second("?");
+        total += firstResult.length;
+        total += secondResult.length;
+    }
+    console.log(total);
+    console.log("assert:", 2600);
+};

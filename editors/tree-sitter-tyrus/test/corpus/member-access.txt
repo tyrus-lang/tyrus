@@ -1,0 +1,54 @@
+==================
+Member access chain
+==================
+
+const a = v.b.c;
+
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (member_expression
+        object: (member_expression
+          object: (identifier)
+          property: (identifier))
+        property: (identifier)))))
+
+==================
+Optional member access
+==================
+
+const a = v?.b;
+
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (member_expression
+        object: (identifier)
+        property: (identifier)))))
+
+==================
+Enum struct variant still keeps its payload
+==================
+
+const a = Kind.Some { id: 1 };
+
+---
+
+(source_file
+  (declaration
+    (variable_declaration
+      name: (identifier)
+      value: (enum_struct_variant_expression
+        variant: (member_expression
+          object: (identifier)
+          property: (identifier))
+        payload: (object
+          (pair
+            key: (identifier)
+            value: (number)))))))

@@ -1,0 +1,73 @@
+// `?` inside async functions, over a temporary, over a frame local holding an
+// allocated error, into a wider success type and through a suspending
+// `finally`. The error string must reach the caller exactly once.
+const parse = (ok: boolean): Result<i32, string> => {
+    if (ok) {
+        return Ok(40);
+    }
+    return Err(`bad ${"input"}`);
+};
+
+const load = async (ok: boolean): Promise<Result<i32, string>> => {
+    if (ok) {
+        return Ok(1);
+    }
+    return Err(`load ${"failed"}`);
+};
+
+const direct = async (ok: boolean): Promise<Result<i32, string>> => {
+    const value = parse(ok)?;
+    return Ok(value + 1);
+};
+
+const viaLocal = async (ok: boolean): Promise<Result<i32, string>> => {
+    const result = await load(ok);
+    const value = result?;
+    return Ok(value + 100);
+};
+
+const retyped = async (ok: boolean): Promise<Result<string, string>> => {
+    const value = parse(ok)?;
+    await load(true);
+    return Ok(`value ${value}`);
+};
+
+const withFinally = async (ok: boolean): Promise<Result<i32, string>> => {
+    try {
+        const value = parse(ok)?;
+        return Ok(value);
+    } catch (error) {
+        printError(error.message);
+        return Err("caught");
+    } finally {
+        await load(true);
+        print("finally ran");
+    }
+};
+
+const show = (label: string, result: Result<i32, string>): void => {
+    match (result) {
+        Ok(value) => { print(label, value); }
+        Err(error) => { print(label, error); }
+    }
+};
+
+const showText = (label: string, result: Result<string, string>): void => {
+    match (result) {
+        Ok(value) => { print(label, value); }
+        Err(error) => { print(label, error); }
+    }
+};
+
+const main = async (): Promise<void> => {
+    for (let round = 0; round < 20; round += 1) {
+        const first = await direct(round % 2 === 0);
+        show("direct", first);
+        const second = await viaLocal(round % 3 === 0);
+        show("local", second);
+        const third = await retyped(round % 2 === 1);
+        showText("retyped", third);
+        const fourth = await withFinally(round % 5 === 0);
+        show("finally", fourth);
+    }
+};

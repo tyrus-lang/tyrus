@@ -1,0 +1,23 @@
+// `n.toString()` on a number allocates, and inside an `async` function nothing
+// was freeing it, one buffer per iteration.
+//
+// Inside an `async` function `record_owned_native_result_with` returns without
+// registering anything: the frame reconstructs every release from the *shape*
+// of the initializer instead. `owned_string_frame_method` covers the string
+// instance methods and asks for a `string` receiver, so `round.toString()` on
+// an `i32` matched no shape at all and its buffer was never released. The two
+// sides now ask one shared question (`numeric_to_string_allocates`).
+import { sleepAsync } from "tyrus:task";
+
+async function main(): Promise<void> {
+    await sleepAsync(0);
+    let round: i32 = 0;
+    let total: usize = 0;
+    while (round < 200) {
+        const owner: string = "borrowed" + round.toString();
+        const bare: string = round.toString();
+        total += owner.length + bare.length;
+        round += 1;
+    }
+    console.log(total);
+}

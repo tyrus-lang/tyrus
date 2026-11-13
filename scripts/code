@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+extension_dir="${project_dir}/editors/vscode"
+code_command="${CODE_BIN:-code}"
+
+if ! command -v "${code_command}" >/dev/null 2>&1; then
+    echo "error: '${code_command}' was not found in PATH" >&2
+    exit 1
+fi
+
+echo "==> Regenerating editor artifacts from the compiler lexicon"
+(cd "${project_dir}" && cargo run --quiet -p xtask)
+
+cd "${extension_dir}"
+
+echo "==> Installing extension dependencies"
+npm install
+
+echo "==> Validating and packaging the extension"
+npm run package
+
+package_name="$(node -p "require('./package.json').name")"
+package_version="$(node -p "require('./package.json').version")"
+vsix="${extension_dir}/${package_name}-${package_version}.vsix"
+
+if [[ ! -f "${vsix}" ]]; then
+    echo "error: VSIX package was not generated at '${vsix}'" >&2
+    exit 1
+fi
+
+echo "==> Installing ${vsix}"
+"${code_command}" --install-extension "${vsix}" --force
+
+echo "==> VS Code extension updated successfully"
+echo "    Run 'Developer: Reload Window' in the window where it will be tested."

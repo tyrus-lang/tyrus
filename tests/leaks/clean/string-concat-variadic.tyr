@@ -1,0 +1,26 @@
+// `concat` with N variadic arguments built N-1 intermediate buffers before
+// the final result, only the last was ever claimed, leaking exactly N-1
+// blocks per call, confirmed to scale with argument count (2 args → 1 leaked
+// block, 3 → 2, 4 → 3; 1 arg → 0, since no intermediate exists). Closed by
+// tracking which value in the loop is owned and freeing a superseded one
+// before the next call replaces it.
+//
+// Expected output is 7600.
+const main = (): void => {
+    const name: string = "TYRUS";
+    let total: usize = 0;
+    for (let i: i32 = 0; i < 200; i += 1) {
+        const two: string = name.concat(" a");
+        const three: string = name.concat(" a", " b");
+        const four: string = name.concat(" a", " b", " c");
+        total += two.length + three.length + four.length;
+        // Unbound temporary with 4 arguments: every intermediate must go.
+        name.concat(" a", " b", " c", " d");
+        // Rebind: the previous four-argument result must be released first.
+        let rebound: string = name.concat(" a", " b");
+        rebound = name.concat(" a", " b", " c");
+        total += rebound.length;
+    }
+    console.log(total);
+    console.log("assert:", 7600);
+};
