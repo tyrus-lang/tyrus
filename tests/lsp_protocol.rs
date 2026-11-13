@@ -573,7 +573,22 @@ fn custom_database_schema_watcher_reanalyzes_open_documents_on_change() {
         json!({"changes": [{"uri": file_uri(&schema_path), "type": 2}]}),
     );
     lsp.wait_for_publications(&uri, 2);
-    let trace = lsp.drain_trace().join("\n");
+    let mut trace = lsp.wait_for_trace_event("stage=database_schema_cache");
+    if !trace
+        .iter()
+        .any(|event| event.contains("event=analysis_computation"))
+    {
+        trace.extend(lsp.wait_for_trace_event("event=analysis_computation"));
+    }
+    if !trace
+        .iter()
+        .any(|event| event.contains("stage=request_dispatch_workspace/didChangeWatchedFiles"))
+    {
+        trace.extend(
+            lsp.wait_for_trace_event("stage=request_dispatch_workspace/didChangeWatchedFiles"),
+        );
+    }
+    let trace = trace.join("\n");
     assert!(trace.contains("stage=database_schema_cache"), "{trace}");
     assert!(trace.contains("event=analysis_computation"), "{trace}");
     assert!(
@@ -588,7 +603,14 @@ fn custom_database_schema_watcher_reanalyzes_open_documents_on_change() {
         json!({"changes": [{"uri": file_uri(&schema_path), "type": 3}]}),
     );
     lsp.wait_for_publications(&uri, 2);
-    let trace = lsp.drain_trace().join("\n");
+    let mut trace = lsp.wait_for_trace_event("stage=database_schema_cache");
+    if !trace
+        .iter()
+        .any(|event| event.contains("event=analysis_computation"))
+    {
+        trace.extend(lsp.wait_for_trace_event("event=analysis_computation"));
+    }
+    let trace = trace.join("\n");
     assert!(trace.contains("stage=database_schema_cache"), "{trace}");
     assert!(trace.contains("event=analysis_computation"), "{trace}");
 }
