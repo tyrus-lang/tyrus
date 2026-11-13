@@ -57,6 +57,7 @@ impl ReplCompiler {
 
         let mut clang_command = process::Command::new(&self.clang);
         clang_command.arg(&ll_path);
+        crate::platform::configure_native_linker(&mut clang_command, &self.clang);
         configure_clang_optimization(&mut clang_command, &self.clang, false);
         configure_msvc_runtime(&mut clang_command, &self.clang);
         let runtime = self

@@ -179,7 +179,7 @@ jobs:
           $llvmConfig = Get-ChildItem $prefixRoot -Filter llvm-config.exe -Recurse -File | Select-Object -First 1
           if ($null -eq $llvmConfig) { throw 'LLVM 23.1.1 llvm-config.exe was not found after extraction.' }
           $prefix = Split-Path (Split-Path $llvmConfig.FullName -Parent) -Parent
-          foreach ($tool in @('clang.exe', 'llvm-ar.exe', 'llvm-nm.exe', 'llvm-profdata.exe')) {
+          foreach ($tool in @('clang.exe', 'lld-link.exe', 'llvm-ar.exe', 'llvm-nm.exe', 'llvm-profdata.exe')) {
             if (-not (Test-Path (Join-Path $prefix "bin/$tool"))) { throw "Required LLVM tool was not extracted: $tool" }
           }
           "LLVM_SYS_231_PREFIX=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -644,13 +644,14 @@ jobs:
           Copy-Item "$env:GITHUB_WORKSPACE/LICENSE" $root
           Copy-Item (Join-Path $prefix 'include/llvm/Support/LICENSE.TXT') (Join-Path $root 'LLVM-LICENSE.TXT')
           Copy-Item (Join-Path $prefix 'bin/clang.exe') (Join-Path $bin 'clang.exe')
+          Copy-Item (Join-Path $prefix 'bin/lld-link.exe') (Join-Path $bin 'lld-link.exe')
           Copy-Item (Join-Path $prefix 'bin/llvm-profdata.exe') (Join-Path $bin 'llvm-profdata.exe')
           Copy-Item (Join-Path $prefix 'bin/*.dll') $bin -ErrorAction SilentlyContinue
           Copy-Item (Join-Path $prefix 'lib/clang/23/*') $resource -Recurse -Force
           @'
           Tyrus native release package
 
-          Expand this archive and add its bin directory to PATH. The bundled compiler resolves LLVM DLLs from the package and finds its matching Clang, llvm-profdata, and runtime library beside itself.
+          Expand this archive and add its bin directory to PATH. The bundled compiler resolves LLVM DLLs from the package and finds its matching Clang, lld-link, llvm-profdata, and runtime library beside itself. Native builds work from a regular PowerShell window; an installed Windows SDK is still required.
 
           Verify the archive checksum by comparing `Get-FileHash -Algorithm SHA256 <archive>.zip` with the hash in `<archive>.zip.sha256`. Run `tyrus --version` after adding bin to PATH.
 

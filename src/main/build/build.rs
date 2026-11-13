@@ -235,6 +235,7 @@ pub(super) fn cmd_build(
             let clang = find_clang();
             let mut clang_command = process::Command::new(&clang);
             clang_command.arg(&ll_path);
+            crate::platform::configure_native_linker(&mut clang_command, &clang);
             if optimized {
                 compile::configure_release_debug_stripping(&mut clang_command);
             }

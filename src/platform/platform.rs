@@ -105,6 +105,24 @@ pub(crate) fn configure_runtime_system_libraries(
     Ok(())
 }
 
+pub(crate) fn configure_native_linker(command: &mut Command, clang: &str) {
+    if msvc_linker_arguments(std::env::consts::OS, clang_driver_is_clang_cl(clang)).is_empty() {
+        return;
+    }
+    command.args(msvc_linker_arguments(
+        std::env::consts::OS,
+        clang_driver_is_clang_cl(clang),
+    ));
+}
+
+fn msvc_linker_arguments(os: &str, clang_cl: bool) -> &'static [&'static str] {
+    if os == "windows" && !clang_cl {
+        &["-fuse-ld=lld"]
+    } else {
+        &[]
+    }
+}
+
 fn native_library_directories(runtime: &Path, manifest_directory: Option<&Path>) -> Vec<PathBuf> {
     let mut directories = Vec::new();
     if let Some(directory) = runtime.parent() {
@@ -524,6 +542,14 @@ mod tests {
         assert!(clang_driver_is_clang_cl("C:\\LLVM\\bin\\clang-cl.exe"));
         assert!(clang_driver_is_clang_cl("/opt/llvm/bin/clang-cl"));
         assert!(!clang_driver_is_clang_cl("clang"));
+    }
+
+    #[test]
+    fn windows_clang_driver_uses_the_bundled_lld_linker() {
+        assert_eq!(msvc_linker_arguments("windows", false), &["-fuse-ld=lld"]);
+        assert!(msvc_linker_arguments("windows", true).is_empty());
+        assert!(msvc_linker_arguments("linux", false).is_empty());
+        assert!(msvc_linker_arguments("macos", false).is_empty());
     }
 
     #[test]
