@@ -28,23 +28,29 @@ fi
 tag="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPOSITORY/releases/latest" | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
 [ -n "$tag" ] || fail 'Could not determine the latest Tyrus release.'
 printf '%s\n' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' || fail 'GitHub returned an invalid Tyrus release tag.'
+printf 'Installing Tyrus %s. Please wait...\n' "$tag"
 archive="tyrus-$tag-$suffix.tar.gz"
 release_url="https://github.com/$REPOSITORY/releases/download/$tag"
 temporary="$(mktemp -d)"
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
 
+printf 'Downloading %s...\n' "$archive"
 curl -fsSL --retry 3 "$release_url/$archive" -o "$temporary/$archive"
+printf 'Downloading checksum...\n'
 curl -fsSL --retry 3 "$release_url/$archive.sha256" -o "$temporary/$archive.sha256"
-(cd "$temporary" && verify_checksum "$archive.sha256") || fail 'Release package checksum verification failed.'
+printf 'Verifying release package checksum...\n'
+(cd "$temporary" && verify_checksum "$archive.sha256" >/dev/null) || fail 'Release package checksum verification failed.'
+printf 'Checksum verified.\n'
 
 install_root="${XDG_DATA_HOME:-$HOME/.local/share}/tyrus"
 bin_dir="${HOME}/.local/bin"
 mkdir -p "$install_root" "$bin_dir"
 rm -rf "$install_root/$tag"
+printf 'Extracting and installing Tyrus %s...\n' "$tag"
 tar -xzf "$temporary/$archive" -C "$install_root"
 ln -sfn "$install_root/tyrus-$tag-$suffix/bin/tyrus" "$bin_dir/tyrus"
 
-printf 'Installed Tyrus %s.\n' "$tag"
+printf 'Tyrus %s installed successfully.\n' "$tag"
 case ":${PATH}:" in
     *":$bin_dir:"*) ;;
     *) printf 'Add %s to PATH to run tyrus.\n' "$bin_dir" ;;
