@@ -32,7 +32,7 @@ Build artifacts go to `target/debug/` by default and `target/release/` with `tyr
 
 The tag-triggered native release workflow is configured for Linux x86_64, macOS Apple Silicon, and Windows x86_64. It packages the CLI, native runtime, and matching LLVM tools after each platform's build and smoke checks pass.
 
-Visit the [LSP editor support guide](https://tyruslang.org/docs/tooling/lsp) to choose support for VS Code, Neovim, Zed, IntelliJ, or Kate. Install the [Tyrus extension from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=tyrus-lang.tyrus).
+Visit the [LSP editor support guide](https://tyruslang.org/tooling/lsp) to choose support for VS Code, Neovim, Zed, IntelliJ, or Kate. Install the [Tyrus extension from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=tyrus-lang.tyrus).
 
 ## Documentation
 
