@@ -1,6 +1,6 @@
 # Tyrus Language Support
 
-<p align="center"><img src="https://tyruslang.org/tyrus-logo.png" alt="tyrus logo" width="160"></p>
+![tyrus logo](https://tyruslang.org/tyrus-logo-160x160.png)
 
 Language Server integration, syntax highlighting, diagnostics, navigation, and IntelliSense for **tyrus**.
 
